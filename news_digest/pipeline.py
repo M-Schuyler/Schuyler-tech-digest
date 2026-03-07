@@ -21,7 +21,7 @@ class NewsPipeline:
         self.extractor = ArticleExtractor(settings)
         self.summarizer = NewsSummarizer(settings)
         self.repository = NewsRepository()
-        self.report_writer = MarkdownReportWriter()
+        self.report_writer = MarkdownReportWriter(max_highlights=settings.daily_highlight_count)
         self.notifier = TelegramNotifier()
 
     def run(self, report_date: date | None = None) -> tuple[str, int]:
