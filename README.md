@@ -16,7 +16,7 @@
    - 未配置 `OPENAI_API_KEY` 时：自动使用免费翻译源（Google 网页接口，失败时回退 MyMemory）翻译英文摘要。  
 4. 关键词提取：每篇新闻生成 3 个关键词。  
 5. 数据存储：保存到 SQLite（`data/tech_news.db`）。  
-6. 日报输出：生成“全站热点汇总”Markdown 报告（`reports/YYYY-MM-DD.md`，先英文后中文，不含来源字段）。  
+6. 日报输出：生成“全站热点汇总”Markdown 报告（`reports/YYYY-MM-DD.md`，先英文后中文，不含来源字段），并给出 Top 趋势信号。  
 7. Telegram 推送：自动发送日报到指定聊天。  
 8. 云端自动运行：GitHub Actions 每日定时运行。
 
@@ -61,7 +61,7 @@ python main.py --date 2026-03-07
 - `OPENAI_API_KEY`：可选。配置后使用 OpenAI 直接生成高质量英中摘要。
 - `OPENAI_MODEL`：默认 `gpt-4o-mini`。
 - `MAX_ARTICLES_PER_SOURCE`：每个源最多抓取文章数，默认 `10`。
-- `DAILY_HIGHLIGHT_COUNT`：日报中输出热点条数，默认 `10`。
+- `DAILY_HIGHLIGHT_COUNT`：日报中输出热点条数，默认 `6`。
 - `REQUEST_TIMEOUT`：抓取超时秒数，默认 `20`。
 - `FREE_TRANSLATION_TARGET`：免费翻译目标语言，默认 `zh-CN`。
 - `FREE_TRANSLATION_TIMEOUT`：免费翻译请求超时秒数，默认 `15`。
@@ -89,18 +89,20 @@ python main.py
 
 ## 双语摘要格式（Markdown）
 
-日报会输出“英文热点”与“中文热点”两段，示例：
+日报会输出“趋势信号 + 精简热点分点”两段，示例：
 
 ```text
 # 今日科技圈新鲜事
 
-## English Highlights
-- Point 1
-- Point 2
+## Key Signals (EN)
+- Today's hottest directions are AI Models, Regulation & Policy, Platforms & Apps.
+- [AI Models] Point 1
+- [Regulation & Policy] Point 2
 
 ## 中文热点
-- 要点 1
-- 要点 2
+- 今天最热方向集中在：AI 模型、监管与政策、平台与应用。
+- [AI 模型] 要点 1
+- [监管与政策] 要点 2
 ```
 
 ## 云端每日自动跑（GitHub Actions）

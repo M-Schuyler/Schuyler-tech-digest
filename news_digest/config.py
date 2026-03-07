@@ -17,7 +17,7 @@ class Settings:
     max_articles_per_source: int = 10
     request_timeout: int = 20
     openai_model: str = "gpt-4o-mini"
-    daily_highlight_count: int = 10
+    daily_highlight_count: int = 6
 
 
 DEFAULT_SETTINGS = Settings(
@@ -29,5 +29,5 @@ DEFAULT_SETTINGS = Settings(
     max_articles_per_source=int(os.getenv("MAX_ARTICLES_PER_SOURCE", "10")),
     request_timeout=int(os.getenv("REQUEST_TIMEOUT", "20")),
     openai_model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
-    daily_highlight_count=int(os.getenv("DAILY_HIGHLIGHT_COUNT", "10")),
+    daily_highlight_count=int(os.getenv("DAILY_HIGHLIGHT_COUNT", "6")),
 )
