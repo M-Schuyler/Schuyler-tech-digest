@@ -1,0 +1,2 @@
+"""Tech news digest package."""
+

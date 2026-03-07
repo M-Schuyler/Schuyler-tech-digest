@@ -1,0 +1,124 @@
+# 科技新闻自动抓取与摘要系统
+
+一个每天自动抓取科技新闻、生成英中双语摘要，并可自动推送 Telegram 的 Python 项目。
+
+支持站点：
+- TechCrunch
+- The Verge
+- Wired
+
+## 功能
+
+1. 新闻抓取：通过 RSS 获取最新文章列表。  
+2. 数据处理：提取标题、发布时间、原文链接、新闻内容。  
+3. 双语 AI 摘要：每篇新闻生成 3 句英文摘要，并在每句下方给出对应中文翻译。  
+4. 关键词提取：每篇新闻生成 3 个关键词。  
+5. 数据存储：保存到 SQLite（`data/tech_news.db`）。  
+6. 日报输出：生成 Markdown 报告（`reports/YYYY-MM-DD.md`）。  
+7. Telegram 推送：自动发送日报到指定聊天。  
+8. 云端自动运行：GitHub Actions 每日定时运行。
+
+## 项目结构
+
+```text
+.
+├── .github/workflows/daily-tech-news.yml
+├── main.py
+├── requirements.txt
+├── data/
+├── reports/
+└── news_digest/
+    ├── config.py
+    ├── db.py
+    ├── extractor.py
+    ├── fetchers.py
+    ├── models.py
+    ├── notifier.py
+    ├── pipeline.py
+    ├── report.py
+    └── summarizer.py
+```
+
+## 本地运行
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+python main.py
+```
+
+可选：指定日报日期（影响输出文件名）
+
+```bash
+python main.py --date 2026-03-07
+```
+
+## 环境变量
+
+- `OPENAI_API_KEY`：必须配置，才能生成中文翻译（以及更高质量摘要）。
+- `OPENAI_MODEL`：默认 `gpt-4o-mini`。
+- `MAX_ARTICLES_PER_SOURCE`：每个源最多抓取文章数，默认 `10`。
+- `REQUEST_TIMEOUT`：抓取超时秒数，默认 `20`。
+- `TELEGRAM_BOT_TOKEN`：Telegram 机器人 Token。
+- `TELEGRAM_CHAT_ID`：目标聊天 ID（个人或群组）。
+
+示例：
+
+```bash
+export OPENAI_API_KEY="your_openai_key"
+export TELEGRAM_BOT_TOKEN="123456:abc..."
+export TELEGRAM_CHAT_ID="123456789"
+python main.py
+```
+
+## SQLite 字段
+
+`news` 表包含字段：
+- `title`
+- `source`
+- `summary`
+- `url`
+- `date`
+
+并额外保存 `keywords` 方便日报展示。
+
+## 双语摘要格式（Markdown）
+
+每条新闻的摘要部分为：
+
+```text
+摘要：
+- EN: English sentence 1
+  ZH: 中文翻译 1
+- EN: English sentence 2
+  ZH: 中文翻译 2
+- EN: English sentence 3
+  ZH: 中文翻译 3
+```
+
+## 云端每日自动跑（GitHub Actions）
+
+工作流文件已提供：
+- `.github/workflows/daily-tech-news.yml`
+
+默认调度：每天北京时间 08:00（UTC `0 0 * * *`）。
+
+### 配置步骤
+
+1. 把项目推到 GitHub 仓库。  
+2. 进入仓库 `Settings -> Secrets and variables -> Actions`。  
+3. 添加以下 Secrets：
+   - `OPENAI_API_KEY`
+   - `TELEGRAM_BOT_TOKEN`
+   - `TELEGRAM_CHAT_ID`
+4. 在 `Actions` 页面手动运行一次 `Daily Tech News Digest` 验证。  
+5. 后续将每日自动执行并推送到 Telegram。
+
+## 本地 cron（可选）
+
+如果你仍想本地定时：
+
+```cron
+0 8 * * * cd /Users/chenshukai/Documents/New\ project && /Users/chenshukai/Documents/New\ project/.venv/bin/python main.py >> logs/cron.log 2>&1
+```

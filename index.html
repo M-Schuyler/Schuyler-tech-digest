@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>反应速度测试</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --card: rgba(255, 255, 255, 0.08);
+      --text: #e2e8f0;
+      --accent: #22c55e;
+      --warn: #ef4444;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      background: radial-gradient(circle at top, #1e293b, var(--bg));
+      color: var(--text);
+      display: grid;
+      place-items: center;
+      padding: 20px;
+    }
+
+    .game {
+      width: min(760px, 100%);
+      text-align: center;
+    }
+
+    h1 {
+      margin: 0 0 12px;
+      font-size: clamp(28px, 5vw, 40px);
+      letter-spacing: 0.04em;
+    }
+
+    .panel {
+      margin-top: 14px;
+      background: var(--card);
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      border-radius: 14px;
+      padding: 18px;
+      backdrop-filter: blur(4px);
+    }
+
+    .arena {
+      margin-top: 16px;
+      height: 320px;
+      border-radius: 16px;
+      border: 2px solid rgba(255, 255, 255, 0.2);
+      display: grid;
+      place-items: center;
+      user-select: none;
+      cursor: pointer;
+      transition: background-color 0.15s ease;
+      background: #1f2937;
+      padding: 20px;
+      font-size: clamp(18px, 3.5vw, 26px);
+      line-height: 1.5;
+    }
+
+    .arena.waiting {
+      background: #374151;
+    }
+
+    .arena.ready {
+      background: var(--accent);
+      color: #052e16;
+      font-weight: 700;
+    }
+
+    .arena.too-soon {
+      background: var(--warn);
+      color: #fff;
+      font-weight: 700;
+    }
+
+    .stats {
+      margin-top: 12px;
+      font-size: 17px;
+      display: flex;
+      justify-content: center;
+      gap: 18px;
+      flex-wrap: wrap;
+    }
+
+    button {
+      margin-top: 14px;
+      border: none;
+      border-radius: 10px;
+      padding: 10px 18px;
+      font-size: 16px;
+      cursor: pointer;
+      background: #0ea5e9;
+      color: #fff;
+    }
+
+    button:hover {
+      filter: brightness(1.06);
+    }
+  </style>
+</head>
+<body>
+  <main class="game">
+    <h1>反应速度测试</h1>
+    <div class="panel">
+      <div id="arena" class="arena">点击“开始测试”</div>
+      <button id="startBtn">开始测试</button>
+      <div class="stats">
+        <div>当前成绩：<strong id="current">--</strong></div>
+        <div>历史最佳：<strong id="best">--</strong></div>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    const arena = document.getElementById('arena');
+    const startBtn = document.getElementById('startBtn');
+    const currentEl = document.getElementById('current');
+    const bestEl = document.getElementById('best');
+
+    const BEST_KEY = 'reaction-best-ms';
+
+    let state = 'idle';
+    let startTime = 0;
+    let timer = null;
+    let best = Number(localStorage.getItem(BEST_KEY));
+
+    if (Number.isFinite(best) && best > 0) {
+      bestEl.textContent = `${best} ms`;
+    }
+
+    function setArena(text, className) {
+      arena.textContent = text;
+      arena.className = `arena ${className}`.trim();
+    }
+
+    function resetToIdle(text = '点击“开始测试”') {
+      state = 'idle';
+      if (timer) {
+        clearTimeout(timer);
+        timer = null;
+      }
+      setArena(text, '');
+      startBtn.disabled = false;
+    }
+
+    function startGame() {
+      state = 'waiting';
+      currentEl.textContent = '--';
+      startBtn.disabled = true;
+
+      setArena('等待变绿后立即点击！', 'waiting');
+
+      const delay = Math.floor(Math.random() * 3000) + 1500; // 1.5s - 4.5s
+      timer = setTimeout(() => {
+        state = 'ready';
+        startTime = performance.now();
+        setArena('现在点击！', 'ready');
+        timer = null;
+      }, delay);
+    }
+
+    function handleArenaClick() {
+      if (state === 'idle') {
+        return;
+      }
+
+      if (state === 'waiting') {
+        setArena('点早了！请重新开始', 'too-soon');
+        resetToIdle('点早了！点击“开始测试”再来一次');
+        return;
+      }
+
+      if (state === 'ready') {
+        const reaction = Math.round(performance.now() - startTime);
+        currentEl.textContent = `${reaction} ms`;
+
+        if (!Number.isFinite(best) || best <= 0 || reaction < best) {
+          best = reaction;
+          localStorage.setItem(BEST_KEY, String(best));
+          bestEl.textContent = `${best} ms`;
+        }
+
+        resetToIdle(`你的反应时间：${reaction} ms（点击“开始测试”继续）`);
+      }
+    }
+
+    startBtn.addEventListener('click', startGame);
+    arena.addEventListener('click', handleArenaClick);
+  </script>
+</body>
+</html>
