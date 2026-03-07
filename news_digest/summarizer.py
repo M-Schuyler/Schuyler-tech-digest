@@ -74,7 +74,9 @@ STOPWORDS = {
 class NewsSummarizer:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
-        self._client = None
+        self._openai_client = None
+        self._gemini_api_key = os.getenv("GEMINI_API_KEY", "").strip()
+        self._gemini_model = settings.gemini_model
         self._translation_target = os.getenv("FREE_TRANSLATION_TARGET", "zh-CN")
         self._translation_timeout = int(os.getenv("FREE_TRANSLATION_TIMEOUT", "15"))
         api_key = os.getenv("OPENAI_API_KEY")
@@ -82,12 +84,18 @@ class NewsSummarizer:
             try:
                 from openai import OpenAI
 
-                self._client = OpenAI(api_key=api_key)
+                self._openai_client = OpenAI(api_key=api_key)
             except Exception as exc:  # noqa: BLE001
                 logger.warning("OpenAI client init failed, use local summary fallback: %s", exc)
 
     def summarize(self, article: ArticleRaw) -> ArticleSummary:
-        if self._client:
+        if self._gemini_api_key:
+            try:
+                return self._summarize_with_gemini(article)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("Gemini summary failed for %s: %s", article.url, exc)
+
+        if self._openai_client:
             try:
                 return self._summarize_with_openai(article)
             except Exception as exc:  # noqa: BLE001
@@ -103,7 +111,7 @@ class NewsSummarizer:
             "summary_zh (array of exactly 3 concise Simplified Chinese translations aligned by index), and "
             "keywords (array of exactly 3 short English keywords)."
         )
-        response = self._client.chat.completions.create(
+        response = self._openai_client.chat.completions.create(
             model=self.settings.openai_model,
             temperature=0.2,
             response_format={"type": "json_object"},
@@ -125,6 +133,55 @@ class NewsSummarizer:
         en_sentences = _normalize_sentences(data.get("summary_en") or [])
         zh_sentences = _normalize_chinese_sentences(data.get("summary_zh") or [])
         keywords = _normalize_keywords(data.get("keywords") or [])
+
+        if len(en_sentences) < 3 or len(zh_sentences) < 3 or len(keywords) < 3:
+            fallback = self._fill_chinese_with_free_translation(_fallback_summary(article.content))
+            if len(en_sentences) < 3:
+                en_sentences = fallback.sentences_en
+            if len(zh_sentences) < 3:
+                zh_sentences = fallback.sentences_zh
+            if len(keywords) < 3:
+                keywords = fallback.keywords
+
+        en_sentences, zh_sentences = _align_bilingual(en_sentences, zh_sentences)
+        return ArticleSummary(
+            sentences_en=en_sentences[:3],
+            sentences_zh=zh_sentences[:3],
+            keywords=keywords[:3],
+        )
+
+    def _summarize_with_gemini(self, article: ArticleRaw) -> ArticleSummary:
+        prompt = (
+            "You are a bilingual tech news analyst. Return strict JSON with keys: "
+            "summary_en (array of exactly 3 concise English sentences), "
+            "summary_zh (array of exactly 3 concise Simplified Chinese translations aligned by index), and "
+            "keywords (array of exactly 3 short English keywords).\\n\\n"
+            f"Title: {article.title}\\n"
+            f"Content:\\n{article.content[:8000]}"
+        )
+
+        response = requests.post(
+            f"https://generativelanguage.googleapis.com/v1beta/models/{self._gemini_model}:generateContent",
+            params={"key": self._gemini_api_key},
+            json={
+                "contents": [{"parts": [{"text": prompt}]}],
+                "generationConfig": {
+                    "temperature": 0.2,
+                    "responseMimeType": "application/json",
+                },
+            },
+            timeout=45,
+        )
+        response.raise_for_status()
+        data = response.json()
+        raw_text = (
+            ((data.get("candidates") or [{}])[0].get("content") or {}).get("parts") or [{}]
+        )[0].get("text", "{}")
+        parsed = _parse_json_object(raw_text)
+
+        en_sentences = _normalize_sentences(parsed.get("summary_en") or [])
+        zh_sentences = _normalize_chinese_sentences(parsed.get("summary_zh") or [])
+        keywords = _normalize_keywords(parsed.get("keywords") or [])
 
         if len(en_sentences) < 3 or len(zh_sentences) < 3 or len(keywords) < 3:
             fallback = self._fill_chinese_with_free_translation(_fallback_summary(article.content))
@@ -321,3 +378,25 @@ def _align_bilingual(en_sentences: list[str], zh_sentences: list[str]) -> tuple[
 
 def _missing_translation_notice(english_sentence: str) -> str:
     return f"（中文翻译暂不可用，保留英文原文）{english_sentence}"
+
+
+def _parse_json_object(raw_text: str) -> dict:
+    text = (raw_text or "").strip()
+    if not text:
+        return {}
+
+    # Gemini occasionally wraps JSON in markdown fences.
+    if text.startswith("```"):
+        text = re.sub(r"^```(?:json)?\s*", "", text)
+        text = re.sub(r"\s*```$", "", text)
+
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        match = re.search(r"\{.*\}", text, flags=re.DOTALL)
+        if not match:
+            return {}
+        try:
+            return json.loads(match.group(0))
+        except json.JSONDecodeError:
+            return {}
