@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 
+import requests
+
 from .config import REPORT_DIR
 from .db import StoredArticle
 
@@ -75,8 +77,8 @@ def _collect_points(items: list[StoredArticle]) -> list[HighlightPoint]:
         if not en:
             continue
 
-        en = _shorten_english(en)
-        zh = _shorten_chinese(zh or en)
+        en = _build_compact_en(item.title, en)
+        zh = _build_compact_zh(zh or "", en)
         key = re.sub(r"\W+", "", en.lower())
         if not key or key in seen:
             continue
@@ -168,15 +170,76 @@ def _has_keyword(text: str, keyword: str) -> bool:
     return key in text
 
 
-def _shorten_english(text: str, max_words: int = 20) -> str:
-    words = text.split()
-    if len(words) <= max_words:
-        return text
-    return " ".join(words[:max_words]) + "..."
+def _build_compact_en(title: str, summary_en: str) -> str:
+    title_clean = _clean_spaces(title).rstrip(".")
+    word_count = len(title_clean.split())
+    if 4 <= word_count <= 18:
+        return title_clean
+    return _compress_english(summary_en)
 
 
-def _shorten_chinese(text: str, max_chars: int = 56) -> str:
-    compact = re.sub(r"\s+", " ", text).strip()
-    if len(compact) <= max_chars:
-        return compact
-    return compact[: max_chars - 3] + "..."
+def _build_compact_zh(summary_zh: str, fallback_en: str) -> str:
+    text = _clean_spaces(summary_zh)
+    text = re.sub(r"^（中文翻译暂不可用，保留英文原文）", "", text)
+    if not text or not _contains_cjk(text):
+        translated = _translate_to_chinese(fallback_en)
+        if translated:
+            text = translated
+        else:
+            return fallback_en
+
+    parts = re.split(r"[，；：]", text, maxsplit=1)
+    candidate = parts[0].strip()
+    candidate = re.sub(r"^(但是|而且|并且|另外|同时)", "", candidate).strip()
+    if candidate and candidate[-1] not in "。！？":
+        candidate += "。"
+    return candidate
+
+
+def _compress_english(text: str) -> str:
+    clean = _clean_spaces(text)
+    if not clean:
+        return "No clear update."
+
+    # Keep the main clause and drop trailing context clauses.
+    candidate = re.split(r",\\s+(which|where|while|after|because|although)\\b", clean, maxsplit=1)[0]
+    candidate = re.split(r"\\s+[-—]\\s+", candidate, maxsplit=1)[0]
+    candidate = re.split(r";", candidate, maxsplit=1)[0]
+    candidate = re.sub(r"^(But|And|So)\\s+", "", candidate, flags=re.IGNORECASE).strip(" ,")
+
+    if candidate and candidate[-1] not in ".!?":
+        candidate += "."
+    return candidate
+
+
+def _clean_spaces(text: str) -> str:
+    return re.sub(r"\\s+", " ", text).strip()
+
+
+def _contains_cjk(text: str) -> bool:
+    return re.search(r"[\u4e00-\u9fff]", text) is not None
+
+
+def _translate_to_chinese(text: str) -> str:
+    clean = _clean_spaces(text)
+    if not clean:
+        return ""
+
+    try:
+        response = requests.get(
+            "https://translate.googleapis.com/translate_a/single",
+            params={
+                "client": "gtx",
+                "sl": "auto",
+                "tl": "zh-CN",
+                "dt": "t",
+                "q": clean,
+            },
+            timeout=15,
+        )
+        response.raise_for_status()
+        data = response.json()
+        chunks = data[0] if isinstance(data, list) and data else []
+        return "".join(chunk[0] for chunk in chunks if isinstance(chunk, list) and chunk).strip()
+    except requests.RequestException:
+        return ""
