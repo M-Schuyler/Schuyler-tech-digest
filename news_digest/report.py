@@ -77,7 +77,7 @@ def _collect_points(items: list[StoredArticle]) -> list[HighlightPoint]:
         if not en:
             continue
 
-        en = _build_compact_en(item.title, en)
+        en = _build_compact_en(en)
         zh = _build_compact_zh(zh or "", en)
         key = re.sub(r"\W+", "", en.lower())
         if not key or key in seen:
@@ -170,11 +170,7 @@ def _has_keyword(text: str, keyword: str) -> bool:
     return key in text
 
 
-def _build_compact_en(title: str, summary_en: str) -> str:
-    title_clean = _clean_spaces(title).rstrip(".")
-    word_count = len(title_clean.split())
-    if 4 <= word_count <= 18:
-        return title_clean
+def _build_compact_en(summary_en: str) -> str:
     return _compress_english(summary_en)
 
 
@@ -188,8 +184,10 @@ def _build_compact_zh(summary_zh: str, fallback_en: str) -> str:
         else:
             return fallback_en
 
-    parts = re.split(r"[，；：]", text, maxsplit=1)
-    candidate = parts[0].strip()
+    sentence_parts = re.split(r"(?<=[。！？])\s*", text, maxsplit=1)
+    candidate = sentence_parts[0].strip()
+    if not candidate:
+        candidate = text
     candidate = re.sub(r"^(但是|而且|并且|另外|同时)", "", candidate).strip()
     if candidate and candidate[-1] not in "。！？":
         candidate += "。"
@@ -201,11 +199,12 @@ def _compress_english(text: str) -> str:
     if not clean:
         return "No clear update."
 
-    # Keep the main clause and drop trailing context clauses.
-    candidate = re.split(r",\\s+(which|where|while|after|because|although)\\b", clean, maxsplit=1)[0]
-    candidate = re.split(r"\\s+[-—]\\s+", candidate, maxsplit=1)[0]
+    # Keep only the first sentence, then keep the core clause.
+    candidate = re.split(r"(?<=[.!?])[\"”']?\s+", clean, maxsplit=1)[0]
+    candidate = re.split(r",\s+(which|where|while|after|because|although)\b", candidate, maxsplit=1)[0]
+    candidate = re.split(r"\s+[-—]\s+", candidate, maxsplit=1)[0]
     candidate = re.split(r";", candidate, maxsplit=1)[0]
-    candidate = re.sub(r"^(But|And|So)\\s+", "", candidate, flags=re.IGNORECASE).strip(" ,")
+    candidate = re.sub(r"^(But|And|So)\s+", "", candidate, flags=re.IGNORECASE).strip(" ,")
 
     if candidate and candidate[-1] not in ".!?":
         candidate += "."
@@ -213,7 +212,7 @@ def _compress_english(text: str) -> str:
 
 
 def _clean_spaces(text: str) -> str:
-    return re.sub(r"\\s+", " ", text).strip()
+    return re.sub(r"\s+", " ", text).strip()
 
 
 def _contains_cjk(text: str) -> bool:
