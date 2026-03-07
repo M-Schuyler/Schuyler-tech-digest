@@ -6,6 +6,8 @@ import os
 import re
 from collections import Counter
 
+import requests
+
 from .config import Settings
 from .models import ArticleRaw, ArticleSummary
 
@@ -73,6 +75,8 @@ class NewsSummarizer:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
         self._client = None
+        self._translation_target = os.getenv("FREE_TRANSLATION_TARGET", "zh-CN")
+        self._translation_timeout = int(os.getenv("FREE_TRANSLATION_TIMEOUT", "15"))
         api_key = os.getenv("OPENAI_API_KEY")
         if api_key:
             try:
@@ -89,7 +93,8 @@ class NewsSummarizer:
             except Exception as exc:  # noqa: BLE001
                 logger.warning("OpenAI summary failed for %s: %s", article.url, exc)
 
-        return _fallback_summary(article.content)
+        fallback = _fallback_summary(article.content)
+        return self._fill_chinese_with_free_translation(fallback)
 
     def _summarize_with_openai(self, article: ArticleRaw) -> ArticleSummary:
         prompt = (
@@ -122,7 +127,7 @@ class NewsSummarizer:
         keywords = _normalize_keywords(data.get("keywords") or [])
 
         if len(en_sentences) < 3 or len(zh_sentences) < 3 or len(keywords) < 3:
-            fallback = _fallback_summary(article.content)
+            fallback = self._fill_chinese_with_free_translation(_fallback_summary(article.content))
             if len(en_sentences) < 3:
                 en_sentences = fallback.sentences_en
             if len(zh_sentences) < 3:
@@ -136,6 +141,45 @@ class NewsSummarizer:
             sentences_zh=zh_sentences[:3],
             keywords=keywords[:3],
         )
+
+    def _fill_chinese_with_free_translation(self, summary: ArticleSummary) -> ArticleSummary:
+        translated: list[str] = []
+        for sentence in summary.sentences_en:
+            translated_sentence = self._translate_free(sentence)
+            translated.append(translated_sentence or _missing_translation_notice(sentence))
+
+        return ArticleSummary(
+            sentences_en=summary.sentences_en[:3],
+            sentences_zh=translated[:3],
+            keywords=summary.keywords[:3],
+        )
+
+    def _translate_free(self, text: str) -> str | None:
+        clean_text = text.strip()
+        if not clean_text:
+            return None
+
+        endpoint = "https://translate.googleapis.com/translate_a/single"
+        try:
+            response = requests.get(
+                endpoint,
+                params={
+                    "client": "gtx",
+                    "sl": "auto",
+                    "tl": self._translation_target,
+                    "dt": "t",
+                    "q": clean_text,
+                },
+                timeout=self._translation_timeout,
+            )
+            response.raise_for_status()
+            data = response.json()
+            chunks = data[0] if isinstance(data, list) and data else []
+            merged = "".join(chunk[0] for chunk in chunks if isinstance(chunk, list) and chunk)
+            return merged.strip() or None
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Free translation failed: %s", exc)
+            return None
 
 
 def _fallback_summary(content: str) -> ArticleSummary:
@@ -246,4 +290,4 @@ def _align_bilingual(en_sentences: list[str], zh_sentences: list[str]) -> tuple[
 
 
 def _missing_translation_notice(english_sentence: str) -> str:
-    return f"（需配置 OPENAI_API_KEY 才能生成中文翻译）{english_sentence}"
+    return f"（中文翻译暂不可用，保留英文原文）{english_sentence}"
