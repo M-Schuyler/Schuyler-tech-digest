@@ -13,7 +13,7 @@
 2. 数据处理：提取标题、发布时间、原文链接、新闻内容。  
 3. 双语摘要：每篇新闻生成 3 句英文摘要，并在每句下方给出对应中文翻译。  
    - 配置 `OPENAI_API_KEY` 时：使用 OpenAI 直接生成高质量英中摘要。  
-   - 未配置 `OPENAI_API_KEY` 时：自动使用免费 Google 翻译网页接口翻译英文摘要。  
+   - 未配置 `OPENAI_API_KEY` 时：自动使用免费翻译源（Google 网页接口，失败时回退 MyMemory）翻译英文摘要。  
 4. 关键词提取：每篇新闻生成 3 个关键词。  
 5. 数据存储：保存到 SQLite（`data/tech_news.db`）。  
 6. 日报输出：生成 Markdown 报告（`reports/YYYY-MM-DD.md`）。  

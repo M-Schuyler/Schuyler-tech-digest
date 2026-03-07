@@ -159,6 +159,17 @@ class NewsSummarizer:
         if not clean_text:
             return None
 
+        google_translation = self._translate_with_google(clean_text)
+        if google_translation:
+            return google_translation
+
+        memory_translation = self._translate_with_mymemory(clean_text)
+        if memory_translation:
+            return memory_translation
+
+        return None
+
+    def _translate_with_google(self, text: str) -> str | None:
         endpoint = "https://translate.googleapis.com/translate_a/single"
         try:
             response = requests.get(
@@ -168,7 +179,7 @@ class NewsSummarizer:
                     "sl": "auto",
                     "tl": self._translation_target,
                     "dt": "t",
-                    "q": clean_text,
+                    "q": text,
                 },
                 timeout=self._translation_timeout,
             )
@@ -178,7 +189,26 @@ class NewsSummarizer:
             merged = "".join(chunk[0] for chunk in chunks if isinstance(chunk, list) and chunk)
             return merged.strip() or None
         except Exception as exc:  # noqa: BLE001
-            logger.warning("Free translation failed: %s", exc)
+            logger.warning("Google free translation failed: %s", exc)
+            return None
+
+    def _translate_with_mymemory(self, text: str) -> str | None:
+        endpoint = "https://api.mymemory.translated.net/get"
+        langpair_target = self._translation_target.split("-")[0]
+        try:
+            response = requests.get(
+                endpoint,
+                params={"q": text, "langpair": f"en|{langpair_target}"},
+                timeout=self._translation_timeout,
+            )
+            response.raise_for_status()
+            data = response.json() if response.content else {}
+            translated = (data.get("responseData") or {}).get("translatedText")
+            if translated:
+                return str(translated).strip()
+            return None
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("MyMemory free translation failed: %s", exc)
             return None
 
 
