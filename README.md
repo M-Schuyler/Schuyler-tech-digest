@@ -40,17 +40,16 @@ A daily tech-news pipeline that fetches RSS articles, removes duplicates, filter
 Generated file: `reports/YYYY-MM-DD.md`
 
 ```text
-# Daily Tech Briefing
+# 今日科技快报（中文一眼版）
 
-## 1. <Title>
-Category: <AI|Robotics|Chips|Big Tech|Startups>
-EN Summary:
-1. ...
-2. ...
-中文摘要：
-1. ...
-2. ...
-Link: ...
+## 一眼看懂
+- 热门方向：人工智能 4条、科技大厂 3条、芯片 2条
+- 今日结论：AI 仍是主线，大厂动作频繁。
+
+## 最值得关注（Top 3）
+- 重点1（人工智能）：...
+- 重点2（科技大厂）：...
+- 重点3（芯片）：...
 ```
 
 ## AI Priority
