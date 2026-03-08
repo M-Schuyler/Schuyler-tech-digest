@@ -4,211 +4,242 @@ import json
 import logging
 import os
 import re
-from collections import Counter
+from typing import Any
 
 import requests
 
 from .config import Settings
-from .models import ArticleRaw, ArticleSummary
+from .models import ArticleAssessment, ArticleRaw
 
 logger = logging.getLogger(__name__)
 
-STOPWORDS = {
-    "the",
-    "a",
-    "an",
-    "and",
-    "or",
-    "but",
-    "if",
-    "for",
-    "to",
-    "of",
-    "in",
-    "on",
-    "at",
-    "with",
-    "by",
-    "from",
-    "this",
-    "that",
-    "these",
-    "those",
-    "is",
-    "are",
-    "was",
-    "were",
-    "be",
-    "been",
-    "being",
-    "it",
-    "its",
-    "as",
-    "about",
-    "into",
-    "over",
-    "after",
-    "before",
-    "than",
-    "their",
-    "they",
-    "them",
-    "you",
-    "your",
-    "we",
-    "our",
-    "he",
-    "she",
-    "his",
-    "her",
-    "not",
-    "can",
-    "will",
-    "just",
-    "more",
-    "most",
-    "new",
-}
+ALLOWED_CATEGORIES = {"AI", "Robotics", "Chips", "Big Tech", "Startups"}
+
+EXCLUDED_TITLE_PATTERNS = [
+    r"\breview\b",
+    r"\bhands[- ]on\b",
+    r"\bopinion\b",
+    r"\bop-ed\b",
+    r"\beditorial\b",
+    r"\bgaming\b",
+    r"\bgame\b",
+    r"\bgadget\b",
+    r"\bsmartphone\b",
+    r"\biphone\b",
+    r"\bandroid phones?\b",
+    r"\bbest .*?(phone|laptop|tablet|headphones?)\b",
+    r"\btrailer\b",
+    r"\bmovie\b",
+    r"\bseries\b",
+]
+
+FOCUS_PATTERNS = [
+    r"\b(ai|llm|language model|foundation model|agentic|generative ai)\b",
+    r"\b(robot|robotics|humanoid|autonomous system|drone)\b",
+    r"\b(chip|semiconductor|gpu|cpu|foundry|tsmc|nvidia)\b",
+    r"\b(apple|google|microsoft|amazon|meta|tesla|openai|anthropic)\b",
+    r"\b(startup|funding|raised|series [abcde]|seed round|valuation)\b",
+    r"\b(breakthrough|quantum|fusion|new material|novel architecture)\b",
+]
+
+CATEGORY_RULES: list[tuple[str, list[str]]] = [
+    ("Robotics", ["robot", "robotics", "humanoid", "drone", "autonomous vehicle", "autonomous system"]),
+    ("Chips", ["chip", "semiconductor", "gpu", "cpu", "foundry", "fabrication", "wafer", "tsmc", "nvidia"]),
+    (
+        "Big Tech",
+        [
+            "apple",
+            "google",
+            "microsoft",
+            "amazon",
+            "meta",
+            "tesla",
+            "alphabet",
+            "bytedance",
+        ],
+    ),
+    ("Startups", ["startup", "funding", "raised", "series a", "series b", "series c", "valuation", "venture"]),
+    ("AI", ["ai", "llm", "language model", "foundation model", "openai", "anthropic", "chatbot", "agent"]),
+]
 
 
 class NewsSummarizer:
+    """Assess, filter and summarize articles for Daily Tech Briefing."""
+
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
         self._openai_client = None
         self._gemini_api_key = os.getenv("GEMINI_API_KEY", "").strip()
         self._gemini_model = settings.gemini_model
         self._translation_target = os.getenv("FREE_TRANSLATION_TARGET", "zh-CN")
-        self._translation_timeout = int(os.getenv("FREE_TRANSLATION_TIMEOUT", "15"))
-        api_key = os.getenv("OPENAI_API_KEY")
-        if api_key:
+        self._translation_timeout = int(os.getenv("FREE_TRANSLATION_TIMEOUT", "8"))
+        self._min_importance = int(os.getenv("MIN_IMPORTANCE_SCORE", "55"))
+        self._google_available = True
+        self._mymemory_available = True
+
+        openai_api_key = os.getenv("OPENAI_API_KEY", "").strip()
+        if openai_api_key:
             try:
                 from openai import OpenAI
 
-                self._openai_client = OpenAI(api_key=api_key)
+                self._openai_client = OpenAI(api_key=openai_api_key)
             except Exception as exc:  # noqa: BLE001
-                logger.warning("OpenAI client init failed, use local summary fallback: %s", exc)
+                logger.warning("OpenAI client init failed: %s", exc)
 
-    def summarize(self, article: ArticleRaw) -> ArticleSummary:
+    def assess(self, article: ArticleRaw) -> ArticleAssessment | None:
+        if _is_obvious_excluded(article.title) and not _matches_focus_topic(article.title):
+            return None
+
+        assessment: ArticleAssessment | None = None
+
         if self._gemini_api_key:
             try:
-                return self._summarize_with_gemini(article)
+                assessment = self._assess_with_gemini(article)
             except Exception as exc:  # noqa: BLE001
-                logger.warning("Gemini summary failed for %s: %s", article.url, exc)
+                logger.warning("Gemini assess failed for %s: %s", article.url, exc)
 
-        if self._openai_client:
+        if not assessment and self._openai_client:
             try:
-                return self._summarize_with_openai(article)
+                assessment = self._assess_with_openai(article)
             except Exception as exc:  # noqa: BLE001
-                logger.warning("OpenAI summary failed for %s: %s", article.url, exc)
+                logger.warning("OpenAI assess failed for %s: %s", article.url, exc)
 
-        fallback = _fallback_summary(article.content)
-        return self._fill_chinese_with_free_translation(fallback)
+        if not assessment:
+            assessment = self._assess_with_heuristic(article)
 
-    def _summarize_with_openai(self, article: ArticleRaw) -> ArticleSummary:
-        prompt = (
-            "You are a bilingual tech news analyst. Return strict JSON with keys: "
-            "summary_en (array of exactly 3 concise English sentences), "
-            "summary_zh (array of exactly 3 concise Simplified Chinese translations aligned by index), and "
-            "keywords (array of exactly 3 short English keywords)."
-        )
-        response = self._openai_client.chat.completions.create(
-            model=self.settings.openai_model,
-            temperature=0.2,
-            response_format={"type": "json_object"},
-            messages=[
-                {"role": "system", "content": prompt},
-                {
-                    "role": "user",
-                    "content": (
-                        f"Title: {article.title}\n"
-                        f"Content:\n{article.content[:8000]}"
-                    ),
-                },
-            ],
-        )
+        normalized = self._normalize_assessment(article, assessment)
+        if not normalized.keep:
+            return None
+        if normalized.category not in ALLOWED_CATEGORIES:
+            return None
+        if normalized.importance_score < self._min_importance:
+            return None
+        return normalized
 
-        raw_content = response.choices[0].message.content or "{}"
-        data = json.loads(raw_content)
-
-        en_sentences = _normalize_sentences(data.get("summary_en") or [])
-        zh_sentences = _normalize_chinese_sentences(data.get("summary_zh") or [])
-        keywords = _normalize_keywords(data.get("keywords") or [])
-
-        if len(en_sentences) < 3 or len(zh_sentences) < 3 or len(keywords) < 3:
-            fallback = self._fill_chinese_with_free_translation(_fallback_summary(article.content))
-            if len(en_sentences) < 3:
-                en_sentences = fallback.sentences_en
-            if len(zh_sentences) < 3:
-                zh_sentences = fallback.sentences_zh
-            if len(keywords) < 3:
-                keywords = fallback.keywords
-
-        en_sentences, zh_sentences = _align_bilingual(en_sentences, zh_sentences)
-        return ArticleSummary(
-            sentences_en=en_sentences[:3],
-            sentences_zh=zh_sentences[:3],
-            keywords=keywords[:3],
-        )
-
-    def _summarize_with_gemini(self, article: ArticleRaw) -> ArticleSummary:
-        prompt = (
-            "You are a bilingual tech news analyst. Return strict JSON with keys: "
-            "summary_en (array of exactly 3 concise English sentences), "
-            "summary_zh (array of exactly 3 concise Simplified Chinese translations aligned by index), and "
-            "keywords (array of exactly 3 short English keywords).\\n\\n"
-            f"Title: {article.title}\\n"
-            f"Content:\\n{article.content[:8000]}"
-        )
-
+    def _assess_with_gemini(self, article: ArticleRaw) -> ArticleAssessment:
+        prompt = _editor_prompt(article)
         response = requests.post(
             f"https://generativelanguage.googleapis.com/v1beta/models/{self._gemini_model}:generateContent",
             params={"key": self._gemini_api_key},
             json={
                 "contents": [{"parts": [{"text": prompt}]}],
                 "generationConfig": {
-                    "temperature": 0.2,
+                    "temperature": 0.15,
                     "responseMimeType": "application/json",
                 },
             },
             timeout=45,
         )
         response.raise_for_status()
-        data = response.json()
+        payload = response.json()
         raw_text = (
-            ((data.get("candidates") or [{}])[0].get("content") or {}).get("parts") or [{}]
+            ((payload.get("candidates") or [{}])[0].get("content") or {}).get("parts") or [{}]
         )[0].get("text", "{}")
-        parsed = _parse_json_object(raw_text)
+        data = _parse_json_object(raw_text)
+        return _assessment_from_dict(data, article.title)
 
-        en_sentences = _normalize_sentences(parsed.get("summary_en") or [])
-        zh_sentences = _normalize_chinese_sentences(parsed.get("summary_zh") or [])
-        keywords = _normalize_keywords(parsed.get("keywords") or [])
+    def _assess_with_openai(self, article: ArticleRaw) -> ArticleAssessment:
+        response = self._openai_client.chat.completions.create(
+            model=self.settings.openai_model,
+            temperature=0.15,
+            response_format={"type": "json_object"},
+            messages=[
+                {"role": "system", "content": _editor_system_prompt()},
+                {"role": "user", "content": _editor_user_prompt(article)},
+            ],
+        )
+        raw_content = response.choices[0].message.content or "{}"
+        data = _parse_json_object(raw_content)
+        return _assessment_from_dict(data, article.title)
 
-        if len(en_sentences) < 3 or len(zh_sentences) < 3 or len(keywords) < 3:
-            fallback = self._fill_chinese_with_free_translation(_fallback_summary(article.content))
-            if len(en_sentences) < 3:
-                en_sentences = fallback.sentences_en
-            if len(zh_sentences) < 3:
-                zh_sentences = fallback.sentences_zh
-            if len(keywords) < 3:
-                keywords = fallback.keywords
+    def _assess_with_heuristic(self, article: ArticleRaw) -> ArticleAssessment:
+        text = f"{article.title}\n{article.content}".lower()
+        category = _categorize_heuristic(text)
 
-        en_sentences, zh_sentences = _align_bilingual(en_sentences, zh_sentences)
-        return ArticleSummary(
-            sentences_en=en_sentences[:3],
-            sentences_zh=zh_sentences[:3],
-            keywords=keywords[:3],
+        if _is_obvious_excluded(article.title) and not _matches_focus_topic(text):
+            return ArticleAssessment(
+                keep=False,
+                category="Other",
+                importance_score=0,
+                title=article.title,
+                summary_en=[],
+                summary_zh=[],
+                rejection_reason="Excluded consumer/gaming/review content",
+            )
+
+        if not category:
+            return ArticleAssessment(
+                keep=False,
+                category="Other",
+                importance_score=0,
+                title=article.title,
+                summary_en=[],
+                summary_zh=[],
+                rejection_reason="Not in key tech focus topics",
+            )
+
+        importance_score = _heuristic_importance(text)
+        if importance_score < self._min_importance:
+            return ArticleAssessment(
+                keep=False,
+                category=category,
+                importance_score=importance_score,
+                title=article.title,
+                summary_en=[],
+                summary_zh=[],
+                rejection_reason="Below importance threshold",
+            )
+
+        summary_en = _extract_sentences(article.content, 2)
+        if len(summary_en) < 2:
+            summary_en = _normalize_two_sentences(summary_en, article.content or article.title)
+
+        summary_zh = [self._translate_free(sentence) or _fallback_zh(sentence) for sentence in summary_en]
+
+        return ArticleAssessment(
+            keep=True,
+            category=category,
+            importance_score=importance_score,
+            title=article.title,
+            summary_en=summary_en[:2],
+            summary_zh=summary_zh[:2],
         )
 
-    def _fill_chinese_with_free_translation(self, summary: ArticleSummary) -> ArticleSummary:
-        translated: list[str] = []
-        for sentence in summary.sentences_en:
-            translated_sentence = self._translate_free(sentence)
-            translated.append(translated_sentence or _missing_translation_notice(sentence))
+    def _normalize_assessment(self, article: ArticleRaw, assessment: ArticleAssessment) -> ArticleAssessment:
+        title = (assessment.title or article.title).strip() or article.title
+        keep = bool(assessment.keep)
+        category = assessment.category.strip() if assessment.category else "Other"
+        if category not in ALLOWED_CATEGORIES:
+            category = _categorize_heuristic(f"{title}\n{article.content}".lower()) or category
 
-        return ArticleSummary(
-            sentences_en=summary.sentences_en[:3],
-            sentences_zh=translated[:3],
-            keywords=summary.keywords[:3],
+        summary_en = _normalize_two_sentences(assessment.summary_en, article.content or title)
+        summary_zh = _normalize_two_sentences_zh(assessment.summary_zh)
+        if len(summary_zh) < 2:
+            summary_zh = [self._translate_free(s) or _fallback_zh(s) for s in summary_en]
+        else:
+            repaired: list[str] = []
+            for idx, zh in enumerate(summary_zh[:2]):
+                if _contains_cjk(zh):
+                    repaired.append(zh)
+                else:
+                    repaired.append(self._translate_free(summary_en[idx]) or _fallback_zh(summary_en[idx]))
+            summary_zh = repaired
+
+        if _is_obvious_excluded(title) and not _matches_focus_topic(f"{title}\n{article.content}"):
+            keep = False
+
+        importance = max(0, min(100, int(assessment.importance_score or 0)))
+        if importance == 0:
+            importance = _heuristic_importance(f"{title}\n{article.content}".lower())
+
+        return ArticleAssessment(
+            keep=keep,
+            category=category,
+            importance_score=importance,
+            title=title,
+            summary_en=summary_en[:2],
+            summary_zh=summary_zh[:2],
+            rejection_reason=assessment.rejection_reason,
         )
 
     def _translate_free(self, text: str) -> str | None:
@@ -216,17 +247,20 @@ class NewsSummarizer:
         if not clean_text:
             return None
 
-        google_translation = self._translate_with_google(clean_text)
-        if google_translation:
-            return google_translation
+        google = self._translate_with_google(clean_text)
+        if google:
+            return google
 
-        memory_translation = self._translate_with_mymemory(clean_text)
-        if memory_translation:
-            return memory_translation
+        memory = self._translate_with_mymemory(clean_text)
+        if memory:
+            return memory
 
         return None
 
     def _translate_with_google(self, text: str) -> str | None:
+        if not self._google_available:
+            return None
+
         endpoint = "https://translate.googleapis.com/translate_a/single"
         try:
             response = requests.get(
@@ -247,9 +281,13 @@ class NewsSummarizer:
             return merged.strip() or None
         except Exception as exc:  # noqa: BLE001
             logger.warning("Google free translation failed: %s", exc)
+            self._google_available = False
             return None
 
     def _translate_with_mymemory(self, text: str) -> str | None:
+        if not self._mymemory_available:
+            return None
+
         endpoint = "https://api.mymemory.translated.net/get"
         langpair_target = self._translation_target.split("-")[0]
         try:
@@ -261,142 +299,183 @@ class NewsSummarizer:
             response.raise_for_status()
             data = response.json() if response.content else {}
             translated = (data.get("responseData") or {}).get("translatedText")
-            if translated:
-                return str(translated).strip()
-            return None
+            return str(translated).strip() if translated else None
         except Exception as exc:  # noqa: BLE001
             logger.warning("MyMemory free translation failed: %s", exc)
+            self._mymemory_available = False
             return None
 
 
-def _fallback_summary(content: str) -> ArticleSummary:
-    sentences = _split_sentences(content)
-
-    if not sentences:
-        en = [
-            "Unable to extract enough text for this article.",
-            "Please open the original link for full details.",
-            "This item was still recorded in the daily report.",
-        ]
-        zh = [
-            "无法提取足够正文内容。",
-            "请打开原文链接查看完整信息。",
-            "该新闻仍已记录到每日日报。",
-        ]
-        return ArticleSummary(sentences_en=en, sentences_zh=zh, keywords=["technology", "news", "update"])
-
-    scores = _sentence_scores(sentences)
-    top = sorted(range(len(sentences)), key=lambda idx: scores[idx], reverse=True)[:3]
-    en_selected = [_shorten_sentence(sentences[idx]) for idx in sorted(top)]
-
-    while len(en_selected) < 3:
-        en_selected.append(en_selected[-1])
-
-    zh_selected = [_missing_translation_notice(en) for en in en_selected]
-    keywords = _extract_keywords(content)
-    return ArticleSummary(sentences_en=en_selected[:3], sentences_zh=zh_selected[:3], keywords=keywords[:3])
+def _editor_system_prompt() -> str:
+    return (
+        "You are an expert tech editor for an executive daily briefing. "
+        "Filter and summarize only high-impact technology news."
+    )
 
 
-def _split_sentences(text: str) -> list[str]:
-    text = re.sub(r"\s+", " ", text).strip()
-    if not text:
-        return []
-
-    chunks = re.split(r"(?<=[.!?。！？])\s+", text)
-    if len(chunks) < 3:
-        chunks = re.split(r"(?<=[.!?;。！？；])\s*", text)
-    return [chunk.strip() for chunk in chunks if len(chunk.strip()) > 30]
+def _editor_user_prompt(article: ArticleRaw) -> str:
+    return _editor_prompt(article)
 
 
-def _sentence_scores(sentences: list[str]) -> list[int]:
-    words = re.findall(r"[A-Za-z][A-Za-z0-9\-]{2,}", " ".join(sentences).lower())
-    freq = Counter(word for word in words if word not in STOPWORDS)
-
-    scores: list[int] = []
-    for sentence in sentences:
-        sentence_words = re.findall(r"[A-Za-z][A-Za-z0-9\-]{2,}", sentence.lower())
-        score = sum(freq[word] for word in sentence_words if word in freq)
-        scores.append(score)
-
-    return scores
-
-
-def _extract_keywords(text: str) -> list[str]:
-    words = re.findall(r"[A-Za-z][A-Za-z0-9\-]{2,}", text.lower())
-    freq = Counter(word for word in words if word not in STOPWORDS)
-    keywords = [word for word, _ in freq.most_common(3)]
-
-    while len(keywords) < 3:
-        filler = ["technology", "innovation", "startup"]
-        keywords.append(filler[len(keywords)])
-
-    return keywords[:3]
-
-
-def _normalize_sentences(items: list[str]) -> list[str]:
-    clean = [_shorten_sentence(str(item).strip()) for item in items if str(item).strip()]
-    return clean[:3]
-
-
-def _normalize_chinese_sentences(items: list[str]) -> list[str]:
-    clean = [str(item).strip() for item in items if str(item).strip()]
-    return clean[:3]
+def _editor_prompt(article: ArticleRaw) -> str:
+    return (
+        "Task:\n"
+        "1) Decide whether this article should be kept for a high-signal Daily Tech Briefing.\n"
+        "2) If keep, output category and concise bilingual summaries.\n\n"
+        "Keep ONLY if related to:\n"
+        "- AI / LLM\n"
+        "- Robotics\n"
+        "- Semiconductor / chips\n"
+        "- Major tech company announcements\n"
+        "- Startup funding\n"
+        "- Breakthrough technology\n\n"
+        "Remove if mainly about:\n"
+        "- phone reviews\n"
+        "- gaming\n"
+        "- gadget reviews\n"
+        "- entertainment\n"
+        "- opinion/editorial\n\n"
+        "Return strict JSON only, with keys:\n"
+        "keep (boolean),\n"
+        "category (one of: AI, Robotics, Chips, Big Tech, Startups, Other),\n"
+        "importance_score (0-100 integer),\n"
+        "title (concise title),\n"
+        "summary_en (array of exactly 2 concise English sentences),\n"
+        "summary_zh (array of exactly 2 concise Simplified Chinese sentences),\n"
+        "rejection_reason (string; empty if keep=true).\n\n"
+        f"Article title: {article.title}\n"
+        f"Article content:\n{article.content[:9000]}"
+    )
 
 
-def _normalize_keywords(items: list[str]) -> list[str]:
-    clean = [str(item).strip() for item in items if str(item).strip()]
-    unique: list[str] = []
-    seen: set[str] = set()
-    for item in clean:
-        key = item.lower()
-        if key in seen:
-            continue
-        seen.add(key)
-        unique.append(item)
-    return unique[:3]
+def _assessment_from_dict(data: dict[str, Any], default_title: str) -> ArticleAssessment:
+    return ArticleAssessment(
+        keep=bool(data.get("keep", False)),
+        category=str(data.get("category") or "Other"),
+        importance_score=_to_int(data.get("importance_score"), 0),
+        title=str(data.get("title") or default_title),
+        summary_en=[str(x).strip() for x in (data.get("summary_en") or []) if str(x).strip()],
+        summary_zh=[str(x).strip() for x in (data.get("summary_zh") or []) if str(x).strip()],
+        rejection_reason=str(data.get("rejection_reason") or ""),
+    )
 
 
-def _shorten_sentence(sentence: str, max_words: int = 35) -> str:
-    words = sentence.split()
-    if len(words) <= max_words:
-        return sentence
-    return " ".join(words[:max_words]) + "..."
+def _to_int(value: Any, default: int) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
 
 
-def _align_bilingual(en_sentences: list[str], zh_sentences: list[str]) -> tuple[list[str], list[str]]:
-    en = en_sentences[:]
-    zh = zh_sentences[:]
-
-    while len(en) < 3:
-        en.append(en[-1] if en else "No summary available.")
-    while len(zh) < 3:
-        base = en[len(zh)] if len(zh) < len(en) else "No summary available."
-        zh.append(_missing_translation_notice(base))
-
-    return en[:3], zh[:3]
-
-
-def _missing_translation_notice(english_sentence: str) -> str:
-    return f"（中文翻译暂不可用，保留英文原文）{english_sentence}"
-
-
-def _parse_json_object(raw_text: str) -> dict:
+def _parse_json_object(raw_text: str) -> dict[str, Any]:
     text = (raw_text or "").strip()
     if not text:
         return {}
 
-    # Gemini occasionally wraps JSON in markdown fences.
     if text.startswith("```"):
         text = re.sub(r"^```(?:json)?\s*", "", text)
         text = re.sub(r"\s*```$", "", text)
 
     try:
-        return json.loads(text)
+        parsed = json.loads(text)
+        return parsed if isinstance(parsed, dict) else {}
     except json.JSONDecodeError:
         match = re.search(r"\{.*\}", text, flags=re.DOTALL)
         if not match:
             return {}
         try:
-            return json.loads(match.group(0))
+            parsed = json.loads(match.group(0))
+            return parsed if isinstance(parsed, dict) else {}
         except json.JSONDecodeError:
             return {}
+
+
+def _normalize_two_sentences(items: list[str], fallback_text: str) -> list[str]:
+    clean = [s.strip() for s in items if s and s.strip()]
+    if len(clean) >= 2:
+        return [_ensure_terminal_punct(clean[0]), _ensure_terminal_punct(clean[1])]
+
+    extracted = _extract_sentences(fallback_text, 2)
+    for sentence in extracted:
+        if len(clean) >= 2:
+            break
+        clean.append(sentence)
+
+    while len(clean) < 2:
+        clean.append(clean[0] if clean else "No key update available.")
+
+    return [_ensure_terminal_punct(clean[0]), _ensure_terminal_punct(clean[1])]
+
+
+def _normalize_two_sentences_zh(items: list[str]) -> list[str]:
+    clean = [s.strip() for s in items if s and s.strip()]
+    return clean[:2]
+
+
+def _extract_sentences(text: str, limit: int) -> list[str]:
+    chunks = re.split(r"(?<=[.!?。！？])\s+", (text or "").strip())
+    out: list[str] = []
+    for chunk in chunks:
+        sentence = re.sub(r"\s+", " ", chunk).strip()
+        if len(sentence) < 35:
+            continue
+        out.append(_ensure_terminal_punct(sentence))
+        if len(out) >= limit:
+            break
+    return out
+
+
+def _ensure_terminal_punct(text: str) -> str:
+    stripped = text.strip()
+    if not stripped:
+        return stripped
+    if stripped[-1] in ".!?。！？":
+        return stripped
+    return stripped + "."
+
+
+def _is_obvious_excluded(text: str) -> bool:
+    lower = (text or "").lower()
+    return any(re.search(pattern, lower) for pattern in EXCLUDED_TITLE_PATTERNS)
+
+
+def _matches_focus_topic(text: str) -> bool:
+    lower = (text or "").lower()
+    return any(re.search(pattern, lower) for pattern in FOCUS_PATTERNS)
+
+
+def _categorize_heuristic(text: str) -> str | None:
+    for category, keywords in CATEGORY_RULES:
+        for keyword in keywords:
+            if re.search(rf"\b{re.escape(keyword)}\b", text):
+                return category
+    return None
+
+
+def _heuristic_importance(text: str) -> int:
+    score = 45
+    boosts = [
+        r"\b(announced|launch|released|partnership|acquire|acquisition)\b",
+        r"\b(funding|raised|series [abcde]|valuation|billion|million)\b",
+        r"\b(breakthrough|first|new model|new chip|new architecture)\b",
+        r"\b(regulation|court|policy|department)\b",
+    ]
+    for pattern in boosts:
+        if re.search(pattern, text):
+            score += 12
+
+    if _matches_focus_topic(text):
+        score += 10
+
+    if _is_obvious_excluded(text):
+        score -= 25
+
+    return max(0, min(100, score))
+
+
+def _contains_cjk(text: str) -> bool:
+    return re.search(r"[\u4e00-\u9fff]", text) is not None
+
+
+def _fallback_zh(english_sentence: str) -> str:
+    return f"（中文翻译暂不可用）{english_sentence}"

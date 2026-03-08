@@ -24,7 +24,7 @@ class TelegramNotifier:
         try:
             report_text = report_path.read_text(encoding="utf-8")
             chunks = _split_text(report_text, max_len=3500)
-            header = f"今日科技新闻日报 {report_date.isoformat()}\\n文章数：{article_count}"
+            header = f"Daily Tech Briefing {report_date.isoformat()}\\nItems: {article_count}"
             self._send_message(header)
             for chunk in chunks:
                 self._send_message(chunk)
@@ -50,7 +50,7 @@ class TelegramNotifier:
 
     def _send_document(self, report_path: Path, report_date: date, article_count: int) -> None:
         endpoint = f"https://api.telegram.org/bot{self.bot_token}/sendDocument"
-        caption = f"今日科技新闻日报 {report_date.isoformat()}（Markdown 文件）\\n文章数：{article_count}"
+        caption = f"Daily Tech Briefing {report_date.isoformat()} (Markdown)\\nItems: {article_count}"
         with report_path.open("rb") as report_file:
             response = requests.post(
                 endpoint,

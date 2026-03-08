@@ -41,3 +41,14 @@ class ArticleSummary:
             zh = self.sentences_zh[idx] if idx < len(self.sentences_zh) else ""
             pairs.append((en, zh))
         return pairs
+
+
+@dataclass
+class ArticleAssessment:
+    keep: bool
+    category: str
+    importance_score: int
+    title: str
+    summary_en: list[str]
+    summary_zh: list[str]
+    rejection_reason: str = ""

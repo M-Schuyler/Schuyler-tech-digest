@@ -14,11 +14,11 @@ DB_PATH = DATA_DIR / "tech_news.db"
 @dataclass(frozen=True)
 class Settings:
     rss_sources: dict[str, str]
-    max_articles_per_source: int = 10
+    max_articles_per_source: int = 20
     request_timeout: int = 20
     openai_model: str = "gpt-4o-mini"
     gemini_model: str = "gemini-2.5-flash"
-    daily_highlight_count: int = 6
+    max_briefing_items: int = 10
 
 
 DEFAULT_SETTINGS = Settings(
@@ -26,10 +26,12 @@ DEFAULT_SETTINGS = Settings(
         "TechCrunch": "https://techcrunch.com/feed/",
         "The Verge": "https://www.theverge.com/rss/index.xml",
         "Wired": "https://www.wired.com/feed/rss",
+        "MIT Technology Review": "https://www.technologyreview.com/feed/",
+        "Ars Technica": "http://feeds.arstechnica.com/arstechnica/index",
     },
-    max_articles_per_source=int(os.getenv("MAX_ARTICLES_PER_SOURCE", "10")),
+    max_articles_per_source=int(os.getenv("MAX_ARTICLES_PER_SOURCE", "20")),
     request_timeout=int(os.getenv("REQUEST_TIMEOUT", "20")),
     openai_model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
     gemini_model=os.getenv("GEMINI_MODEL", "gemini-2.5-flash"),
-    daily_highlight_count=int(os.getenv("DAILY_HIGHLIGHT_COUNT", "6")),
+    max_briefing_items=int(os.getenv("MAX_BRIEFING_ITEMS", "10")),
 )
