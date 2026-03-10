@@ -4,7 +4,9 @@ __pycache__/
 *.pyc
 
 logs/
-reports/*.md
-data/*.db
+services/tech-news-digest/reports/*.md
+services/tech-news-digest/data/*.db
+personal-website/.next/
+personal-website/node_modules/
 
 .DS_Store

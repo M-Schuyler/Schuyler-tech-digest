@@ -30,9 +30,11 @@ jobs:
           python-version: "3.11"
 
       - name: Install dependencies
+        working-directory: services/tech-news-digest
         run: pip install -r requirements.txt
 
       - name: Run daily digest
+        working-directory: services/tech-news-digest
         run: python main.py
 
       - name: Upload daily report artifact
@@ -40,5 +42,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: tech-news-report-${{ github.run_id }}
-          path: reports/*.md
+          path: services/tech-news-digest/reports/*.md
           if-no-files-found: ignore
