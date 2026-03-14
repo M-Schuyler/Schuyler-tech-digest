@@ -1,0 +1,11 @@
+{
+  "pages": [
+    "pages/reaction/index"
+  ],
+  "window": {
+    "navigationBarTitleText": "反应速度测试",
+    "navigationBarTextStyle": "black",
+    "navigationBarBackgroundColor": "#ffffff",
+    "backgroundTextStyle": "light"
+  }
+}

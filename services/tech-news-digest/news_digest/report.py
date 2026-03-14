@@ -26,7 +26,7 @@ class MarkdownReportWriter:
 
     def write(self, report_date: date, items: list[BriefingItem]) -> Path:
         report_path = self.output_dir / f"{report_date.isoformat()}.md"
-        lines: list[str] = ["# 今日科技快报（中文一眼版）", ""]
+        lines: list[str] = ["# 🗞️ 今日科技快报（中文一眼版）", ""]
 
         selected = items[: self.max_items]
         if not selected:
@@ -34,34 +34,36 @@ class MarkdownReportWriter:
             report_path.write_text("\n".join(lines), encoding="utf-8")
             return report_path
 
-        lines.extend([f"日期：{report_date.isoformat()}", f"入选新闻：{len(selected)} 条", ""])
-        lines.extend(["## 一眼看懂", ""])
-        lines.append(f"- 热门方向：{_category_overview(selected)}")
-        lines.append(f"- 今日结论：{_overall_takeaway(selected)}")
-        lines.append(f"- 最高热度：{max(item.importance_score for item in selected)} / 100")
+        lines.extend(
+            [
+                f"- 📅 日期：{report_date.isoformat()}",
+                f"- 🧾 入选新闻：{len(selected)} 条",
+                "",
+            ]
+        )
+        lines.extend(["## 🧭 一眼看懂", ""])
+        lines.append(f"- 🔥 热门方向：{_category_overview(selected)}")
+        lines.append(f"- 🧠 今日结论：{_overall_takeaway(selected)}")
+        lines.append(f"- 📈 最高热度：{max(item.importance_score for item in selected)} / 100")
         lines.append("")
 
-        lines.extend(["## 最值得关注（Top 3）", ""])
+        lines.extend(["## ⭐ 最值得关注（Top 3）", ""])
         for idx, item in enumerate(selected[:3], start=1):
-            lines.append(f"- 重点{idx}（{_category_zh(item.category)}）：{_focus_sentence(item)}")
+            lines.append(f"{idx}. {_category_label(item.category)}：{_focus_sentence(item)}")
         lines.append("")
 
-        startup_signals = [_focus_sentence(item) for item in selected if item.category == "Startups"][:2]
-        if startup_signals:
-            lines.extend(["## 融资与公司动作", ""])
-            for signal in startup_signals:
-                lines.append(f"- {signal}")
+        startup_items = [item for item in selected if item.category == "Startups"][:2]
+        if startup_items:
+            lines.extend(["## 💼 融资与公司动作", ""])
+            for item in startup_items:
+                lines.append(f"- {_category_label(item.category)}：{_focus_sentence(item)}")
             lines.append("")
 
-        chips_robotics = [
-            _focus_sentence(item)
-            for item in selected
-            if item.category in {"Chips", "Robotics"}
-        ][:2]
+        chips_robotics = [item for item in selected if item.category in {"Chips", "Robotics"}][:2]
         if chips_robotics:
-            lines.extend(["## 产业与技术突破", ""])
-            for signal in chips_robotics:
-                lines.append(f"- {signal}")
+            lines.extend(["## ⚙️ 产业与技术突破", ""])
+            for item in chips_robotics:
+                lines.append(f"- {_category_label(item.category)}：{_focus_sentence(item)}")
             lines.append("")
 
         report_path.write_text("\n".join(lines), encoding="utf-8")
@@ -74,7 +76,7 @@ def _category_overview(items: list[BriefingItem]) -> str:
         return "暂无显著主题"
 
     ordered = sorted(counts.items(), key=lambda x: (-x[1], x[0]))
-    return "、".join(f"{_category_zh(name)} {count}条" for name, count in ordered[:3])
+    return "、".join(f"{_category_label(name)} {count}条" for name, count in ordered[:3])
 
 
 def _overall_takeaway(items: list[BriefingItem]) -> str:
@@ -121,3 +123,20 @@ def _category_zh(name: str) -> str:
         "Startups": "创业融资",
     }
     return mapping.get(name, name)
+
+
+def _category_emoji(name: str) -> str:
+    mapping = {
+        "AI": "🧠",
+        "Robotics": "🤖",
+        "Chips": "💾",
+        "Big Tech": "🏢",
+        "Startups": "🚀",
+    }
+    return mapping.get(name, "")
+
+
+def _category_label(name: str) -> str:
+    emoji = _category_emoji(name)
+    label = _category_zh(name)
+    return f"{emoji}{label}" if emoji else label

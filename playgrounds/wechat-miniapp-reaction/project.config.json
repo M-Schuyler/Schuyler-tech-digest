@@ -1,0 +1,10 @@
+{
+  "description": "Reaction speed test web-view wrapper",
+  "setting": {
+    "urlCheck": true
+  },
+  "miniprogramRoot": "./",
+  "projectname": "reaction-speed-test",
+  "appid": "wxYOUR_APPID",
+  "compileType": "miniprogram"
+}
