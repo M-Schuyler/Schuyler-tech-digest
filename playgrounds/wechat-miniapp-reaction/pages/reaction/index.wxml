@@ -1,1 +1,23 @@
-<web-view src="{{url}}"></web-view>
+<view class="bg">
+  <view class="orb orb-1"></view>
+  <view class="orb orb-2"></view>
+  <view class="grid"></view>
+</view>
+
+<view class="game">
+  <view class="title">反应速度测试</view>
+  <view class="subtitle">变绿后立刻点击，越快越好</view>
+  <view class="panel">
+    <view class="arena {{arenaClass}}" bindtap="handleArenaTap">
+      <view class="arena-text">{{arenaText}}</view>
+      <view class="arena-hint">点击此区域</view>
+    </view>
+    <button class="start" bindtap="startGame" disabled="{{buttonDisabled}}" hover-class="start--hover">
+      开始测试
+    </button>
+    <view class="stats">
+      <view>当前成绩：<text class="value">{{current}}</text></view>
+      <view>历史最佳：<text class="value">{{best}}</text></view>
+    </view>
+  </view>
+</view>

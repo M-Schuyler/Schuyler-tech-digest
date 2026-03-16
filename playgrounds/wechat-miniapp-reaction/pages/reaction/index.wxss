@@ -1,0 +1,226 @@
+page {
+  background: #0b1220;
+  color: #e2e8f0;
+  min-height: 100vh;
+  font-family: "Avenir Next", "DIN Alternate", "PingFang SC", "Microsoft YaHei", sans-serif;
+  position: relative;
+  overflow: hidden;
+}
+
+.bg {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.orb {
+  position: absolute;
+  width: 520rpx;
+  height: 520rpx;
+  border-radius: 50%;
+  filter: blur(8px);
+  opacity: 0.55;
+  animation: float 12s ease-in-out infinite;
+}
+
+.orb-1 {
+  top: -160rpx;
+  left: -120rpx;
+  background: radial-gradient(circle at 30% 30%, #38bdf8, rgba(56, 189, 248, 0));
+}
+
+.orb-2 {
+  bottom: -200rpx;
+  right: -120rpx;
+  background: radial-gradient(circle at 70% 70%, #22c55e, rgba(34, 197, 94, 0));
+  animation-delay: -4s;
+}
+
+.grid {
+  position: absolute;
+  inset: 0;
+  opacity: 0.15;
+  background-image:
+    linear-gradient(rgba(148, 163, 184, 0.2) 1rpx, transparent 1rpx),
+    linear-gradient(90deg, rgba(148, 163, 184, 0.2) 1rpx, transparent 1rpx);
+  background-size: 64rpx 64rpx;
+}
+
+.game {
+  width: 100%;
+  max-width: 720rpx;
+  margin: 0 auto;
+  padding: 40rpx 24rpx;
+  text-align: center;
+  position: relative;
+  z-index: 1;
+}
+
+.title {
+  font-size: 44rpx;
+  letter-spacing: 2rpx;
+  margin-bottom: 10rpx;
+  animation: fade-in 0.6s ease-out both;
+}
+
+.subtitle {
+  font-size: 24rpx;
+  letter-spacing: 1rpx;
+  color: rgba(226, 232, 240, 0.75);
+  margin-bottom: 24rpx;
+  animation: fade-in 0.6s ease-out both 0.1s;
+}
+
+.panel {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1rpx solid rgba(255, 255, 255, 0.14);
+  border-radius: 24rpx;
+  padding: 24rpx;
+  backdrop-filter: blur(4px);
+  box-shadow: 0 28rpx 60rpx rgba(15, 23, 42, 0.6);
+  animation: rise 0.7s ease-out both 0.15s;
+}
+
+.arena {
+  margin-top: 16rpx;
+  height: 380rpx;
+  border-radius: 24rpx;
+  border: 2rpx solid rgba(255, 255, 255, 0.2);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  user-select: none;
+  transition: background-color 0.2s ease, transform 0.2s ease;
+  background: #172033;
+  padding: 28rpx;
+  font-size: 30rpx;
+  line-height: 1.5;
+  box-shadow: inset 0 0 0 1rpx rgba(255, 255, 255, 0.08);
+}
+
+.arena.waiting {
+  background: #374151;
+}
+
+.arena.ready {
+  background: #22c55e;
+  color: #052e16;
+  font-weight: 700;
+  animation: pulse 1.1s ease-in-out infinite;
+}
+
+.arena.too-soon {
+  background: #ef4444;
+  color: #fff;
+  font-weight: 700;
+  transform: scale(0.98);
+}
+
+.arena-text {
+  font-size: 30rpx;
+  margin-bottom: 10rpx;
+}
+
+.arena-hint {
+  font-size: 22rpx;
+  letter-spacing: 2rpx;
+  text-transform: uppercase;
+  color: rgba(226, 232, 240, 0.6);
+}
+
+.arena.ready .arena-hint {
+  color: rgba(5, 46, 22, 0.7);
+}
+
+.arena.too-soon .arena-hint {
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.start {
+  margin-top: 20rpx;
+  border-radius: 18rpx;
+  font-size: 30rpx;
+  padding: 14rpx 24rpx;
+  background: linear-gradient(135deg, #38bdf8, #0ea5e9);
+  color: #fff;
+  border: none;
+  box-shadow: 0 16rpx 30rpx rgba(14, 165, 233, 0.35);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.start--hover {
+  transform: translateY(2rpx);
+  box-shadow: 0 10rpx 20rpx rgba(14, 165, 233, 0.3);
+}
+
+.start[disabled] {
+  opacity: 0.6;
+  box-shadow: none;
+}
+
+.stats {
+  margin-top: 20rpx;
+  font-size: 26rpx;
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  color: rgba(226, 232, 240, 0.85);
+}
+
+.stats view {
+  margin: 6rpx 12rpx;
+}
+.value {
+  font-weight: 700;
+  color: #f8fafc;
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(10rpx);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(24rpx) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes pulse {
+  0% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.3);
+  }
+  50% {
+    transform: scale(1.01);
+    box-shadow: 0 0 0 18rpx rgba(34, 197, 94, 0);
+  }
+  100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(34, 197, 94, 0);
+  }
+}
+
+@keyframes float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(20rpx);
+  }
+}
