@@ -4,7 +4,7 @@ trafilatura==1.12.2
 beautifulsoup4==4.12.3
 openai==1.68.2
 lxml_html_clean==0.4.3
-libsql-client==0.3.1
+libsql==0.1.10
 matplotlib==3.9.4
 pandas_market_calendars==4.4.1
 Pillow==11.2.1

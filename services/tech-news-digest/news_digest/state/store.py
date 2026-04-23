@@ -325,26 +325,19 @@ class StateStore:
             self.sqlite_path.parent.mkdir(parents=True, exist_ok=True)
 
     def _connect(self):
+        if self.url:
+            import libsql
+
+            conn = libsql.connect(database=self.url, auth_token=self.auth_token or None)
+            return conn
+
         if not self.sqlite_path:
             raise ValueError("sqlite_path is required when STATE_DB_URL is not configured")
 
         conn = sqlite3.connect(self.sqlite_path)
         return conn
 
-    def _remote_client(self):
-        import libsql_client
-
-        return libsql_client.create_client_sync(self.url, auth_token=self.auth_token or None)
-
     def _execute(self, statement: str, params: Sequence[Any] = ()) -> None:
-        if self.url:
-            client = self._remote_client()
-            try:
-                client.execute(statement, list(params))
-            finally:
-                client.close()
-            return
-
         with self._connect() as conn:
             conn.execute(statement, tuple(params))
             conn.commit()
@@ -353,28 +346,11 @@ class StateStore:
         if not rows:
             return
 
-        if self.url:
-            client = self._remote_client()
-            try:
-                for row in rows:
-                    client.execute(statement, list(row))
-            finally:
-                client.close()
-            return
-
         with self._connect() as conn:
             conn.executemany(statement, [tuple(row) for row in rows])
             conn.commit()
 
     def _query_all(self, statement: str, params: Sequence[Any] = ()) -> list[dict[str, Any]]:
-        if self.url:
-            client = self._remote_client()
-            try:
-                result = client.execute(statement, list(params))
-                return [_remote_row_to_dict(row) for row in result.rows]
-            finally:
-                client.close()
-
         with self._connect() as conn:
             cursor = conn.execute(statement, tuple(params))
             rows = cursor.fetchall()
@@ -507,16 +483,6 @@ def create_state_store(settings: RuntimeSettings) -> StateStore:
 def _row_to_dict(cursor, row) -> dict[str, Any]:
     columns = [column[0] for column in cursor.description]
     return {column: row[idx] for idx, column in enumerate(columns)}
-
-
-def _remote_row_to_dict(row: Any) -> dict[str, Any]:
-    if isinstance(row, dict):
-        return dict(row)
-    if hasattr(row, "asdict"):
-        return row.asdict()
-    if hasattr(row, "keys"):
-        return {key: row[key] for key in row.keys()}
-    raise TypeError(f"Unsupported libsql row type: {type(row)!r}")
 
 
 def _to_utc_iso(value: datetime) -> str:
