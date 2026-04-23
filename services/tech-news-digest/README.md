@@ -85,12 +85,24 @@ python main.py close-alert --now 2026-04-23T16:30:00-04:00
 - `TELEGRAM_CHAT_ID_SIDE`
 - `STATE_DB_URL`
 - `STATE_DB_AUTH_TOKEN`
-- `MARKET_PROVIDER`
+- `MARKET_PROVIDER` (`yahoo` or `twelvedata`)
+- `TWELVEDATA_API_KEY` (required when `MARKET_PROVIDER=twelvedata`)
 - `INTRADAY_INTERVAL_MINUTES`
 - `MAX_INTRADAY_ALERTS_PER_DAY`
 - `VOLUME_BASELINE_LOOKBACK_DAYS`
 - `VOLUME_BASELINE_MULTIPLIER`
 - `CHART_DEFAULT_SYMBOLS`
+
+## Market Data Provider Notes
+
+- `MARKET_PROVIDER=yahoo`
+  - zero setup
+  - useful for smoke runs
+  - not reliable enough for production intraday alerts
+- `MARKET_PROVIDER=twelvedata`
+  - recommended production default
+  - one provider covers US stocks and crypto
+  - provider batches the monitored symbol set per interval window, so one scan does not fan out into 11 serial HTTP requests
 
 ## GitHub Actions
 

@@ -27,9 +27,14 @@ class MarketProvider(Protocol):
 
 
 def create_market_provider(settings: RuntimeSettings) -> MarketProvider:
-    if settings.market_provider != "yahoo":
-        raise ValueError(f"Unsupported MARKET_PROVIDER: {settings.market_provider}")
+    if settings.market_provider == "yahoo":
+        from .yahoo_provider import YahooProvider
 
-    from .yahoo_provider import YahooProvider
+        return YahooProvider(settings)
 
-    return YahooProvider(settings)
+    if settings.market_provider == "twelvedata":
+        from .twelvedata_provider import TwelveDataProvider
+
+        return TwelveDataProvider(settings)
+
+    raise ValueError(f"Unsupported MARKET_PROVIDER: {settings.market_provider}")

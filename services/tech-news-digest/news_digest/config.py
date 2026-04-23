@@ -45,6 +45,7 @@ class SymbolProfile:
 @dataclass(frozen=True)
 class RuntimeSettings:
     market_provider: str
+    twelvedata_api_key: str
     state_db_url: str
     state_db_auth_token: str
     state_db_local_path: Path
@@ -115,6 +116,7 @@ def load_runtime_settings() -> RuntimeSettings:
 
     return RuntimeSettings(
         market_provider=os.getenv("MARKET_PROVIDER", "yahoo").strip().lower() or "yahoo",
+        twelvedata_api_key=os.getenv("TWELVEDATA_API_KEY", "").strip(),
         state_db_url=os.getenv("STATE_DB_URL", "").strip(),
         state_db_auth_token=os.getenv("STATE_DB_AUTH_TOKEN", "").strip(),
         state_db_local_path=Path(os.getenv("STATE_DB_LOCAL_PATH", str(STATE_DB_PATH))),
