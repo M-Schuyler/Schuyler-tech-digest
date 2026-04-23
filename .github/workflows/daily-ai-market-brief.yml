@@ -1,0 +1,51 @@
+name: Daily AI + Market Brief
+
+on:
+  schedule:
+    # 08:00 Asia/Shanghai = 00:00 UTC
+    - cron: "0 0 * * *"
+  workflow_dispatch:
+
+jobs:
+  run-daily-brief:
+    runs-on: ubuntu-latest
+    env:
+      TZ: Asia/Shanghai
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      GEMINI_MODEL: gemini-2.5-flash
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      OPENAI_MODEL: gpt-4o-mini
+      TELEGRAM_BOT_TOKEN_MAIN: ${{ secrets.TELEGRAM_BOT_TOKEN_MAIN }}
+      TELEGRAM_CHAT_ID_MAIN: ${{ secrets.TELEGRAM_CHAT_ID_MAIN }}
+      STATE_DB_URL: ${{ secrets.STATE_DB_URL }}
+      STATE_DB_AUTH_TOKEN: ${{ secrets.STATE_DB_AUTH_TOKEN }}
+      MARKET_PROVIDER: yahoo
+      MAX_ARTICLES_PER_SOURCE: "10"
+      MAX_BRIEFING_ITEMS: "10"
+      REQUEST_TIMEOUT: "20"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        working-directory: services/tech-news-digest
+        run: pip install -r requirements.txt
+
+      - name: Run daily brief
+        working-directory: services/tech-news-digest
+        run: python main.py daily-brief
+
+      - name: Upload daily assets
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-market-brief-${{ github.run_id }}
+          path: |
+            services/tech-news-digest/reports/**
+          if-no-files-found: ignore

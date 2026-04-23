@@ -1,0 +1,38 @@
+name: Intraday Market Scan
+
+on:
+  schedule:
+    # Run every 15 minutes on weekdays; job itself decides whether NYSE is open.
+    - cron: "*/15 * * * 1-5"
+  workflow_dispatch:
+
+jobs:
+  intraday-scan:
+    runs-on: ubuntu-latest
+    env:
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      TELEGRAM_BOT_TOKEN_SIDE: ${{ secrets.TELEGRAM_BOT_TOKEN_SIDE }}
+      TELEGRAM_CHAT_ID_SIDE: ${{ secrets.TELEGRAM_CHAT_ID_SIDE }}
+      STATE_DB_URL: ${{ secrets.STATE_DB_URL }}
+      STATE_DB_AUTH_TOKEN: ${{ secrets.STATE_DB_AUTH_TOKEN }}
+      MARKET_PROVIDER: yahoo
+      MAX_INTRADAY_ALERTS_PER_DAY: "5"
+      INTRADAY_INTERVAL_MINUTES: "15"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        working-directory: services/tech-news-digest
+        run: pip install -r requirements.txt
+
+      - name: Run intraday scan
+        working-directory: services/tech-news-digest
+        run: python main.py intraday-scan

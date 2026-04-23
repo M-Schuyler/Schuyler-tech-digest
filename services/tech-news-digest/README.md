@@ -2,7 +2,12 @@
 
 Project location in this workspace: `services/tech-news-digest/`
 
-A daily tech-news pipeline that fetches RSS articles, removes duplicates, filters high-impact topics via AI classification, and outputs a bilingual (EN/ZH) Daily Tech Briefing.
+A daily intelligence pipeline that now supports two product surfaces:
+
+- Main bot: one daily AI + 科技 + 市场交叉情报简报
+- Side bot: intraday anomaly alerts + close summary for 美股 / 币圈核心资产
+
+The original bilingual tech digest still exists as a legacy command while the new main bot stabilizes.
 
 ## Sources
 
@@ -79,13 +84,21 @@ cd services/tech-news-digest
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-python main.py
+python main.py legacy-digest
 ```
 
 Optional date:
 
 ```bash
-python main.py --date 2026-03-08
+python main.py legacy-digest --date 2026-03-08
+```
+
+New jobs:
+
+```bash
+python main.py daily-brief --date 2026-04-23
+python main.py intraday-scan --now 2026-04-23T10:00:00-04:00
+python main.py close-alert --now 2026-04-23T16:30:00-04:00
 ```
 
 ## Environment Variables
@@ -102,8 +115,18 @@ python main.py --date 2026-03-08
 - `FREE_TRANSLATION_TIMEOUT` (default: `8`)
 - `MAX_EXTRACTION_ATTEMPTS` (default: `max(30, MAX_BRIEFING_ITEMS*6)`)
 - `TARGET_CANDIDATE_POOL` (default: `max(MAX_BRIEFING_ITEMS*3, MAX_BRIEFING_ITEMS)`)
-- `TELEGRAM_BOT_TOKEN`
-- `TELEGRAM_CHAT_ID`
+- `TELEGRAM_BOT_TOKEN_MAIN`
+- `TELEGRAM_CHAT_ID_MAIN`
+- `TELEGRAM_BOT_TOKEN_SIDE`
+- `TELEGRAM_CHAT_ID_SIDE`
+- `STATE_DB_URL`
+- `STATE_DB_AUTH_TOKEN`
+- `MARKET_PROVIDER`
+- `INTRADAY_INTERVAL_MINUTES`
+- `MAX_INTRADAY_ALERTS_PER_DAY`
+- `VOLUME_BASELINE_LOOKBACK_DAYS`
+- `VOLUME_BASELINE_MULTIPLIER`
+- `CHART_DEFAULT_SYMBOLS`
 
 ## GitHub Actions (Daily Cloud Run)
 
@@ -112,10 +135,20 @@ Workflow file: `../../.github/workflows/daily-tech-news.yml`
 - Schedule: daily at `08:00` Asia/Shanghai (`0 0 * * *` UTC).
 - Also supports manual trigger (`workflow_dispatch`).
 
+New workflows:
+
+- `../../.github/workflows/daily-ai-market-brief.yml`
+- `../../.github/workflows/intraday-market-scan.yml`
+- `../../.github/workflows/market-close-alert.yml`
+
 Required GitHub Secrets:
 
-- `TELEGRAM_BOT_TOKEN`
-- `TELEGRAM_CHAT_ID`
+- `TELEGRAM_BOT_TOKEN_MAIN`
+- `TELEGRAM_CHAT_ID_MAIN`
+- `TELEGRAM_BOT_TOKEN_SIDE`
+- `TELEGRAM_CHAT_ID_SIDE`
+- `STATE_DB_URL`
+- `STATE_DB_AUTH_TOKEN`
 
 Optional Secrets:
 
