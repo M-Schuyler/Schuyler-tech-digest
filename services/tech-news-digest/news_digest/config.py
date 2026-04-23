@@ -9,7 +9,6 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent.parent
 DATA_DIR = BASE_DIR / "data"
 REPORT_DIR = BASE_DIR / "reports"
-DB_PATH = DATA_DIR / "tech_news.db"
 STATE_DB_PATH = DATA_DIR / "state.db"
 ASSET_DIR = REPORT_DIR / "assets"
 
@@ -107,14 +106,7 @@ def load_runtime_settings() -> RuntimeSettings:
     main_chat = os.getenv("TELEGRAM_CHAT_ID_MAIN", "").strip()
     side_token = os.getenv("TELEGRAM_BOT_TOKEN_SIDE", "").strip()
     side_chat = os.getenv("TELEGRAM_CHAT_ID_SIDE", "").strip()
-    legacy_token = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
-    legacy_chat = os.getenv("TELEGRAM_CHAT_ID", "").strip()
-
-    # Keep the old single-bot env vars as a local fallback while the branch is being integrated.
-    main_bot = BotConfig(
-        token=main_token or legacy_token,
-        chat_id=main_chat or legacy_chat,
-    )
+    main_bot = BotConfig(token=main_token, chat_id=main_chat)
     side_bot = BotConfig(token=side_token, chat_id=side_chat)
 
     DATA_DIR.mkdir(parents=True, exist_ok=True)

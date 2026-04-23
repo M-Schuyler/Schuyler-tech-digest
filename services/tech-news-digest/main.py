@@ -4,16 +4,13 @@ import argparse
 import logging
 from datetime import date, datetime
 
-from news_digest.pipeline import NewsPipeline
 from news_digest.scheduling.jobs import run_close_alert, run_daily_brief, run_intraday_scan
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Tech + AI + market intelligence jobs")
     subparsers = parser.add_subparsers(dest="command")
-
-    legacy = subparsers.add_parser("legacy-digest", help="Run the original tech-news digest pipeline")
-    legacy.add_argument("--date", type=str, default=None, help="Report date in YYYY-MM-DD format")
+    subparsers.required = True
 
     daily = subparsers.add_parser("daily-brief", help="Run the main AI + market daily brief")
     daily.add_argument("--date", type=str, default=None, help="Brief date in YYYY-MM-DD format")
@@ -48,14 +45,7 @@ def main() -> None:
     args = parse_args()
     setup_logging()
 
-    command = args.command or "legacy-digest"
-    if command == "legacy-digest":
-        report_date = date.fromisoformat(args.date) if getattr(args, "date", None) else None
-        pipeline = NewsPipeline()
-        report_path, count = pipeline.run(report_date=report_date)
-        print(f"Done. Articles processed: {count}. Report: {report_path}")
-        return
-
+    command = args.command
     if command == "daily-brief":
         report_date = date.fromisoformat(args.date) if getattr(args, "date", None) else None
         brief = run_daily_brief(report_date_sh=report_date)

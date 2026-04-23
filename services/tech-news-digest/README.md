@@ -1,13 +1,11 @@
-# Tech News RSS Briefing System
+# AI + Market Intelligence Bot System
 
 Project location in this workspace: `services/tech-news-digest/`
 
-A daily intelligence pipeline that now supports two product surfaces:
+A daily intelligence pipeline with two product surfaces:
 
 - Main bot: one daily AI + 科技 + 市场交叉情报简报
 - Side bot: intraday anomaly alerts + close summary for 美股 / 币圈核心资产
-
-The original bilingual tech digest still exists as a legacy command while the new main bot stabilizes.
 
 ## Sources
 
@@ -39,35 +37,8 @@ The original bilingual tech digest still exists as a legacy command while the ne
    - title
    - English summary (2 sentences)
    - Chinese summary (2 sentences)
-8. Output **Daily Tech Briefing** with maximum 10 items.
-9. Send report to Telegram.
-
-## Output Format
-
-Generated file: `reports/YYYY-MM-DD.md`
-
-```text
-# 🗞️ 今日科技快报（中文一眼版）
-
-- 📅 日期：2026-03-08
-- 🧾 入选新闻：10 条
-
-## 🧭 一眼看懂
-- 🔥 热门方向：🧠人工智能 4条、🏢科技大厂 3条、💾芯片 2条
-- 🧠 今日结论：AI 仍是主线，大厂动作频繁。
-- 📈 最高热度：88 / 100
-
-## ⭐ 最值得关注（Top 3）
-1. 🧠人工智能：...
-2. 🏢科技大厂：...
-3. 💾芯片：...
-
-## 💼 融资与公司动作
-- 🚀创业融资：...
-
-## ⚙️ 产业与技术突破
-- 🤖机器人：...
-```
+8. Compose the main bot brief and side bot alerts.
+9. Send formatted cards and text to Telegram.
 
 ## AI Priority
 
@@ -84,13 +55,6 @@ cd services/tech-news-digest
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-python main.py legacy-digest
-```
-
-Optional date:
-
-```bash
-python main.py legacy-digest --date 2026-03-08
 ```
 
 New jobs:
@@ -128,18 +92,17 @@ python main.py close-alert --now 2026-04-23T16:30:00-04:00
 - `VOLUME_BASELINE_MULTIPLIER`
 - `CHART_DEFAULT_SYMBOLS`
 
-## GitHub Actions (Daily Cloud Run)
-
-Workflow file: `../../.github/workflows/daily-tech-news.yml`
-
-- Schedule: daily at `08:00` Asia/Shanghai (`0 0 * * *` UTC).
-- Also supports manual trigger (`workflow_dispatch`).
-
-New workflows:
+## GitHub Actions
 
 - `../../.github/workflows/daily-ai-market-brief.yml`
 - `../../.github/workflows/intraday-market-scan.yml`
 - `../../.github/workflows/market-close-alert.yml`
+
+Schedules:
+
+- Main brief: daily at `08:00` Asia/Shanghai
+- Intraday scan: every 15 minutes during trading windows
+- Close alert: aligned to `16:30` America/New_York
 
 Required GitHub Secrets:
 
@@ -155,15 +118,13 @@ Optional Secrets:
 - `GEMINI_API_KEY`
 - `OPENAI_API_KEY`
 
-## Database
+## State Storage
 
-SQLite DB: `data/tech_news.db`
+Primary state lives in Turso/libSQL via:
 
-Table `news` fields:
+- `STATE_DB_URL`
+- `STATE_DB_AUTH_TOKEN`
 
-- `title`
-- `source`
-- `summary`
-- `url`
-- `date`
-- `keywords` (stores category)
+Local smoke runs can still use:
+
+- `STATE_DB_LOCAL_PATH`

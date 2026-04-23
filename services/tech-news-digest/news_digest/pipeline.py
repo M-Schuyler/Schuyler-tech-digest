@@ -7,12 +7,10 @@ from datetime import date, datetime, timezone
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 from .config import DEFAULT_SETTINGS, Settings
-from .db import NewsRepository, StoredArticle
 from .extractor import ArticleExtractor
 from .fetchers import RSSFetcher
 from .models import ArticleRaw, ArticleSeed
-from .notifier import TelegramNotifier
-from .report import BriefingItem, MarkdownReportWriter
+from .report import BriefingItem
 from .summarizer import NewsSummarizer
 
 logger = logging.getLogger(__name__)
@@ -50,43 +48,10 @@ class NewsPipeline:
         self.fetcher = RSSFetcher(settings)
         self.extractor = ArticleExtractor(settings)
         self.summarizer = NewsSummarizer(settings)
-        self.repository = NewsRepository()
-        self.report_writer = MarkdownReportWriter(max_items=settings.max_briefing_items)
-        self.notifier = TelegramNotifier()
         default_attempts = max(30, settings.max_briefing_items * 6)
         default_pool = max(settings.max_briefing_items * 3, settings.max_briefing_items)
         self.max_extraction_attempts = int(os.getenv("MAX_EXTRACTION_ATTEMPTS", str(default_attempts)))
         self.target_candidate_pool = int(os.getenv("TARGET_CANDIDATE_POOL", str(default_pool)))
-
-    def run(self, report_date: date | None = None) -> tuple[str, int]:
-        run_day = report_date or date.today()
-        selected, extraction_attempts, candidate_count = self.collect_selected(report_date=run_day)
-
-        for briefing, raw in selected:
-            article_day = raw.published_at.date().isoformat() if raw.published_at else run_day.isoformat()
-            self.repository.upsert(
-                StoredArticle(
-                    title=briefing.title,
-                    source=raw.source,
-                    summary=_format_summary_for_storage(briefing),
-                    keywords=briefing.category,
-                    url=briefing.url,
-                    date=article_day,
-                )
-            )
-
-        report_items = [item for item, _ in selected]
-        report_path = self.report_writer.write(run_day, report_items)
-        self.notifier.send_report(run_day, report_path, len(report_items))
-        logger.info(
-            "Report generated: %s (items=%s, extraction_attempts=%s, candidates=%s)",
-            report_path,
-            len(report_items),
-            extraction_attempts,
-            candidate_count,
-        )
-
-        return str(report_path), len(report_items)
 
     def collect_selected(
         self,
@@ -216,23 +181,6 @@ def _canonicalize_url(url: str) -> str:
 def _normalize_title(title: str) -> str:
     text = re.sub(r"\s+", " ", title.lower()).strip()
     return re.sub(r"[^a-z0-9]+", "", text)
-
-
-def _format_summary_for_storage(item: BriefingItem) -> str:
-    en_1 = item.summary_en[0] if item.summary_en else ""
-    en_2 = item.summary_en[1] if len(item.summary_en) > 1 else ""
-    zh_1 = item.summary_zh[0] if item.summary_zh else ""
-    zh_2 = item.summary_zh[1] if len(item.summary_zh) > 1 else ""
-    return "\n".join(
-        [
-            f"Category: {item.category}",
-            f"EN1: {en_1}",
-            f"EN2: {en_2}",
-            f"ZH1: {zh_1}",
-            f"ZH2: {zh_2}",
-            f"Score: {item.importance_score}",
-        ]
-    )
 
 
 def _seed_passes_title_gate(title: str) -> bool:

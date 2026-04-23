@@ -18,7 +18,7 @@ playgrounds/
 
 ### `services/tech-news-digest`
 
-Daily tech-news pipeline that fetches RSS articles, filters important stories, generates a bilingual briefing, stores results in SQLite, and can send the report to Telegram.
+AI + 市场交叉情报双 Bot 服务。主 Bot 负责每天一条综合简报，副 Bot 负责盘中异动和收盘提醒。
 
 Run locally:
 
@@ -27,7 +27,7 @@ cd services/tech-news-digest
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-python main.py
+python main.py daily-brief --date 2026-04-23
 ```
 
 ### `apps/personal-website`
@@ -50,4 +50,8 @@ Open `playgrounds/reaction-speed-test/index.html` directly in a browser.
 
 ## Automation
 
-The scheduled GitHub Actions job for the news digest still lives at `.github/workflows/daily-tech-news.yml`, but now runs from `services/tech-news-digest/`.
+Active workflows for `services/tech-news-digest/`:
+
+- `.github/workflows/daily-ai-market-brief.yml`
+- `.github/workflows/intraday-market-scan.yml`
+- `.github/workflows/market-close-alert.yml`
