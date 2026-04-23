@@ -30,11 +30,11 @@ class FakeDispatcher:
 
 class FakeIntradayProvider:
     def __init__(self) -> None:
-        self.requested_batches: list[tuple[str, ...]] = []
+        self.requested_batches: list[tuple[tuple[str, ...], str, int]] = []
 
     def get_recent_bars_batch(self, symbols, interval: str, lookback_days: int):
         normalized = tuple(symbols)
-        self.requested_batches.append(normalized)
+        self.requested_batches.append((normalized, interval, lookback_days))
         window_end = datetime(2026, 4, 23, 10, 0, tzinfo=NY)
         window_start = window_end - timedelta(minutes=15)
         return {
@@ -127,8 +127,94 @@ def test_intraday_scan_limits_requested_symbols_to_budget(monkeypatch, tmp_path)
 
     result = service.run(now=datetime(2026, 4, 23, 10, 0, tzinfo=NY))
 
-    assert provider.requested_batches == [("TSLA", "QQQ", "NVDA")]
+    assert provider.requested_batches == [(("TSLA", "QQQ", "NVDA"), "15m", 25)]
     assert result.evaluated_symbols == ["TSLA", "QQQ", "NVDA"]
+
+
+def test_intraday_scan_fetches_crypto_separately_and_persists_only_today_bars(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("MARKET_SYMBOL_BUDGET", "4")
+    settings = load_runtime_settings()
+    store = StateStore(sqlite_path=tmp_path / "state.db", market_timezone=settings.market_timezone)
+    store.record_brief(
+        BriefRecord(
+            brief_date_sh=date(2026, 4, 23),
+            reference_trade_date_ny=date(2026, 4, 22),
+            top_three=["AI主线仍在", "市场风险偏好回暖", "BTC继续强于ETH"],
+            ai_section="AI",
+            tech_section="Tech",
+            market_section="Market",
+            cross_section="Cross",
+            watchlist=[
+                WatchSignal(symbol="TSLA", reason="watchlist bump", priority=7),
+                WatchSignal(symbol="BTC", reason="crypto watch", priority=6),
+            ],
+            chart_paths=[],
+            generated_at=datetime(2026, 4, 23, 8, 0, tzinfo=ZoneInfo(settings.brief_timezone)),
+        )
+    )
+
+    class MixedLookbackProvider(FakeIntradayProvider):
+        def get_recent_bars_batch(self, symbols, interval: str, lookback_days: int):
+            normalized = tuple(symbols)
+            self.requested_batches.append((normalized, interval, lookback_days))
+            previous_day = datetime(2026, 4, 22, 15, 45, tzinfo=NY)
+            today_open = datetime(2026, 4, 23, 9, 45, tzinfo=NY)
+            today_now = datetime(2026, 4, 23, 10, 0, tzinfo=NY)
+            return {
+                symbol: [
+                    MarketBar(
+                        symbol=symbol,
+                        ts_ny=previous_day,
+                        open=99.0,
+                        high=99.5,
+                        low=98.8,
+                        close=99.3,
+                        volume=800,
+                    ),
+                    MarketBar(
+                        symbol=symbol,
+                        ts_ny=today_open,
+                        open=100.0,
+                        high=100.2,
+                        low=99.8,
+                        close=100.0,
+                        volume=1000,
+                    ),
+                    MarketBar(
+                        symbol=symbol,
+                        ts_ny=today_now,
+                        open=100.0,
+                        high=100.1,
+                        low=99.9,
+                        close=100.05,
+                        volume=1100,
+                    ),
+                ]
+                for symbol in normalized
+            }
+
+    provider = MixedLookbackProvider()
+    dispatcher = FakeDispatcher()
+    service = IntradayAlertService(
+        settings=settings,
+        provider=provider,
+        state_store=store,
+        calendar=NYSECalendar(settings),
+        dispatcher=dispatcher,
+    )
+
+    result = service.run(now=datetime(2026, 4, 23, 10, 0, tzinfo=NY))
+
+    assert provider.requested_batches == [
+        (("TSLA", "QQQ", "NVDA"), "15m", 25),
+        (("BTC",), "15m", 2),
+    ]
+    assert result.evaluated_symbols == ["TSLA", "BTC", "QQQ", "NVDA"]
+
+    stored_tsla_bars = store.list_market_bars(symbol="TSLA", interval="15m")
+    stored_btc_bars = store.list_market_bars(symbol="BTC", interval="15m")
+    assert [bar.trading_date_ny.isoformat() for bar in stored_tsla_bars] == ["2026-04-23", "2026-04-23"]
+    assert [bar.trading_date_ny.isoformat() for bar in stored_btc_bars] == ["2026-04-23", "2026-04-23"]
 
 
 def test_close_summary_reuses_stored_market_bars_before_provider(monkeypatch, tmp_path) -> None:

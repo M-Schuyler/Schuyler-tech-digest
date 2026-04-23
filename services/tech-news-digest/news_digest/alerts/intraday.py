@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from ..config import RuntimeSettings
+from ..config import RuntimeSettings, get_symbol_profile
 from ..market.cooldown import AlertCooldownPolicy
 from ..market.provider import MarketProvider
 from ..market.signals import aggregate_normals, classify_extreme, classify_normal
@@ -61,11 +61,29 @@ class IntradayAlertService:
             budget=self.settings.market_symbol_budget,
             prioritized=[item.symbol for item in latest_brief.watchlist] if latest_brief else (),
         )
-        bars_by_symbol = self.provider.get_recent_bars_batch(
-            scoped_symbols,
-            interval="15m",
-            lookback_days=max(10, self.settings.volume_baseline_lookback_days + 5),
+        equity_symbols = tuple(
+            symbol for symbol in scoped_symbols if get_symbol_profile(symbol).bucket != "crypto"
         )
+        crypto_symbols = tuple(
+            symbol for symbol in scoped_symbols if get_symbol_profile(symbol).bucket == "crypto"
+        )
+        bars_by_symbol = {}
+        if equity_symbols:
+            bars_by_symbol.update(
+                self.provider.get_recent_bars_batch(
+                    equity_symbols,
+                    interval="15m",
+                    lookback_days=max(10, self.settings.volume_baseline_lookback_days + 5),
+                )
+            )
+        if crypto_symbols:
+            bars_by_symbol.update(
+                self.provider.get_recent_bars_batch(
+                    crypto_symbols,
+                    interval="15m",
+                    lookback_days=2,
+                )
+            )
         evaluated: list[str] = []
         stored_events: list[AlertEvent] = []
         dispatched_events: list[AlertEvent] = []
@@ -77,7 +95,8 @@ class IntradayAlertService:
                 continue
 
             evaluated.append(symbol)
-            self.state_store.upsert_market_bars(symbol, "15m", bars)
+            todays_bars = [bar for bar in bars if bar.trading_date_ny == trade_date]
+            self.state_store.upsert_market_bars(symbol, "15m", todays_bars)
             baseline = self.provider.compute_volume_baseline(
                 symbol,
                 bars,

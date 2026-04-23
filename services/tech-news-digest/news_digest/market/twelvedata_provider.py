@@ -129,7 +129,7 @@ class TwelveDataProvider:
             "apikey": self.settings.twelvedata_api_key,
             "symbol": ",".join(self._provider_symbol(symbol) for symbol in symbols),
             "interval": td_interval,
-            "outputsize": str(self._output_size(interval, lookback_days)),
+            "outputsize": str(self._output_size(interval, lookback_days, symbols)),
             "format": "JSON",
         }
         payload: dict[str, object] | None = None
@@ -176,7 +176,12 @@ class TwelveDataProvider:
             internal_symbol = self._internal_symbol(raw_symbol)
             if internal_symbol not in symbols:
                 continue
-            parsed[internal_symbol] = self._parse_series(internal_symbol, series_payload, interval)
+            parsed[internal_symbol] = self._trim_bars(
+                internal_symbol,
+                self._parse_series(internal_symbol, series_payload, interval),
+                interval=interval,
+                lookback_days=lookback_days,
+            )
 
         return parsed
 
@@ -243,9 +248,29 @@ class TwelveDataProvider:
             return normalized.split("/", 1)[0]
         return normalized.split(":")[-1]
 
-    def _output_size(self, interval: str, lookback_days: int) -> int:
+    def _output_size(self, interval: str, lookback_days: int, symbols: Sequence[str]) -> int:
         if interval == "1d":
             return max(lookback_days + 5, 30)
 
-        max_points_per_day = 96
-        return max(lookback_days * max_points_per_day, 600)
+        max_points_per_day = max(self._points_per_day(symbol) for symbol in symbols)
+        return max(lookback_days * max_points_per_day, max_points_per_day * 2)
+
+    def _trim_bars(
+        self,
+        symbol: str,
+        bars: list[MarketBar],
+        *,
+        interval: str,
+        lookback_days: int,
+    ) -> list[MarketBar]:
+        if interval == "1d":
+            max_points = max(lookback_days + 5, 30)
+        else:
+            max_points = max(lookback_days * self._points_per_day(symbol), self._points_per_day(symbol) * 2)
+        return bars[-max_points:]
+
+    def _points_per_day(self, symbol: str) -> int:
+        profile = get_symbol_profile(symbol)
+        if profile.bucket == "crypto":
+            return 96
+        return 26
