@@ -8,6 +8,14 @@ from ..models import MarketBar
 
 
 class MarketProvider(Protocol):
+    def get_recent_bars_batch(
+        self,
+        symbols: Sequence[str],
+        interval: str,
+        lookback_days: int,
+    ) -> dict[str, list[MarketBar]]:
+        ...
+
     def get_intraday_bars(self, symbol: str, lookback_days: int = 10) -> list[MarketBar]:
         ...
 

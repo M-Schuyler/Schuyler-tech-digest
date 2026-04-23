@@ -3,8 +3,9 @@ from __future__ import annotations
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from ..config import CRYPTO_SYMBOLS, MARKET_SYMBOLS, RuntimeSettings
+from ..config import CRYPTO_SYMBOLS, RuntimeSettings
 from ..market.provider import MarketProvider
+from ..market.symbol_scope import pick_symbol_scope
 from ..models import CloseSummary, WatchSignal
 from ..routing.dispatcher import TelegramDispatcher, format_close_summary
 from ..scheduling.calendar import NYSECalendar
@@ -37,10 +38,14 @@ class CloseAlertService:
 
         trade_date = moment.date()
         alerts = self.state_store.list_alerts(trade_date_ny=trade_date)
-        daily_changes = _collect_daily_changes(self.provider)
+        latest_brief = self.state_store.get_latest_brief()
+        scoped_symbols = pick_symbol_scope(
+            budget=self.settings.market_symbol_budget,
+            prioritized=[item.symbol for item in latest_brief.watchlist] if latest_brief else (),
+        )
+        daily_changes = _collect_daily_changes(self.state_store, scoped_symbols)
         strongest = [symbol for symbol, _ in sorted(daily_changes.items(), key=lambda item: item[1], reverse=True)[:3]]
         weakest = [symbol for symbol, _ in sorted(daily_changes.items(), key=lambda item: item[1])[:3]]
-        latest_brief = self.state_store.get_latest_brief()
         watchlist = latest_brief.watchlist if latest_brief else [
             WatchSignal(symbol="QQQ", reason="先看科技风险偏好", priority=5)
         ]
@@ -62,10 +67,10 @@ class CloseAlertService:
         return summary
 
 
-def _collect_daily_changes(provider: MarketProvider) -> dict[str, float]:
+def _collect_daily_changes(state_store: StateStore, symbols: tuple[str, ...]) -> dict[str, float]:
     changes: dict[str, float] = {}
-    for symbol in MARKET_SYMBOLS:
-        bars = provider.get_intraday_bars(symbol, lookback_days=3)
+    for symbol in symbols:
+        bars = state_store.list_market_bars(symbol=symbol, interval="15m")
         if len(bars) < 2:
             continue
         today_bars = [bar for bar in bars if bar.trading_date_ny == bars[-1].trading_date_ny]

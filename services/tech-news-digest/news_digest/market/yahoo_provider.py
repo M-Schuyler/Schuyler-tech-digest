@@ -31,6 +31,17 @@ class YahooProvider:
             }
         )
 
+    def get_recent_bars_batch(
+        self,
+        symbols: Sequence[str],
+        interval: str,
+        lookback_days: int,
+    ) -> dict[str, list[MarketBar]]:
+        return {
+            symbol: self.get_recent_bars(symbol, interval=interval, lookback_days=lookback_days)
+            for symbol in symbols
+        }
+
     def get_intraday_bars(self, symbol: str, lookback_days: int = 10) -> list[MarketBar]:
         return self.get_recent_bars(symbol, interval="15m", lookback_days=lookback_days)
 

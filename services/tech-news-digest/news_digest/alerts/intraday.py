@@ -3,10 +3,11 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from ..config import MARKET_SYMBOLS, RuntimeSettings
+from ..config import RuntimeSettings
 from ..market.cooldown import AlertCooldownPolicy
 from ..market.provider import MarketProvider
 from ..market.signals import aggregate_normals, classify_extreme, classify_normal
+from ..market.symbol_scope import pick_symbol_scope
 from ..models import AlertEvent, IntradayScanResult
 from ..routing.dispatcher import TelegramDispatcher
 from ..scheduling.calendar import NYSECalendar
@@ -56,16 +57,22 @@ class IntradayAlertService:
 
         latest_brief = self.state_store.get_latest_brief()
         watchlist_symbols = {item.symbol for item in latest_brief.watchlist} if latest_brief else set()
+        scoped_symbols = pick_symbol_scope(
+            budget=self.settings.market_symbol_budget,
+            prioritized=[item.symbol for item in latest_brief.watchlist] if latest_brief else (),
+        )
+        bars_by_symbol = self.provider.get_recent_bars_batch(
+            scoped_symbols,
+            interval="15m",
+            lookback_days=max(10, self.settings.volume_baseline_lookback_days + 5),
+        )
         evaluated: list[str] = []
         stored_events: list[AlertEvent] = []
         dispatched_events: list[AlertEvent] = []
         allowed_normals: list[AlertEvent] = []
 
-        for symbol in MARKET_SYMBOLS:
-            bars = self.provider.get_intraday_bars(
-                symbol,
-                lookback_days=max(10, self.settings.volume_baseline_lookback_days + 5),
-            )
+        for symbol in scoped_symbols:
+            bars = list(bars_by_symbol.get(symbol, []))
             if len(bars) < 2:
                 continue
 

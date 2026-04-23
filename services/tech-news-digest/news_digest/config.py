@@ -46,6 +46,7 @@ class SymbolProfile:
 class RuntimeSettings:
     market_provider: str
     twelvedata_api_key: str
+    market_symbol_budget: int
     state_db_url: str
     state_db_auth_token: str
     state_db_local_path: Path
@@ -117,6 +118,10 @@ def load_runtime_settings() -> RuntimeSettings:
     return RuntimeSettings(
         market_provider=os.getenv("MARKET_PROVIDER", "yahoo").strip().lower() or "yahoo",
         twelvedata_api_key=os.getenv("TWELVEDATA_API_KEY", "").strip(),
+        market_symbol_budget=_resolve_market_symbol_budget(
+            provider=os.getenv("MARKET_PROVIDER", "yahoo").strip().lower() or "yahoo",
+            raw_budget=os.getenv("MARKET_SYMBOL_BUDGET", "").strip(),
+        ),
         state_db_url=os.getenv("STATE_DB_URL", "").strip(),
         state_db_auth_token=os.getenv("STATE_DB_AUTH_TOKEN", "").strip(),
         state_db_local_path=Path(os.getenv("STATE_DB_LOCAL_PATH", str(STATE_DB_PATH))),
@@ -149,3 +154,11 @@ def get_symbol_profile(symbol: str) -> SymbolProfile:
     if normalized not in MARKET_SYMBOLS:
         raise KeyError(f"Unsupported symbol: {symbol}")
     return MARKET_SYMBOLS[normalized]
+
+
+def _resolve_market_symbol_budget(*, provider: str, raw_budget: str) -> int:
+    if raw_budget:
+        return max(1, min(int(raw_budget), len(MARKET_SYMBOLS)))
+    if provider == "twelvedata":
+        return min(8, len(MARKET_SYMBOLS))
+    return len(MARKET_SYMBOLS)

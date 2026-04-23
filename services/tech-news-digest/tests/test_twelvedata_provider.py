@@ -45,77 +45,82 @@ def test_twelvedata_provider_batches_symbols_and_caches_intraday_calls(monkeypat
 
     def fake_get(url: str, params: dict[str, str], timeout: int):
         calls.append({"url": url, **params, "timeout": str(timeout)})
-        return FakeResponse(
-            {
-                "QQQ": {
-                    "meta": {
-                        "symbol": "QQQ",
-                        "interval": "15min",
-                        "exchange_timezone": "America/New_York",
-                        "type": "ETF",
-                    },
-                    "values": [
-                        {
-                            "datetime": "2026-04-22 10:00:00",
-                            "open": "100.0",
-                            "high": "101.0",
-                            "low": "99.8",
-                            "close": "100.8",
-                            "volume": "1200",
-                        },
-                        {
-                            "datetime": "2026-04-22 09:45:00",
-                            "open": "99.6",
-                            "high": "100.2",
-                            "low": "99.5",
-                            "close": "100.0",
-                            "volume": "1000",
-                        },
-                    ],
-                    "status": "ok",
+        requested_symbols = set(params["symbol"].split(","))
+        payload: dict[str, object] = {}
+        if "QQQ" in requested_symbols:
+            payload["QQQ"] = {
+                "meta": {
+                    "symbol": "QQQ",
+                    "interval": params["interval"],
+                    "exchange_timezone": "America/New_York",
+                    "type": "ETF",
                 },
-                "BTC/USD": {
-                    "meta": {
-                        "symbol": "BTC/USD",
-                        "interval": "15min",
-                        "exchange_timezone": "UTC",
-                        "type": "Digital Currency",
+                "values": [
+                    {
+                        "datetime": "2026-04-22 10:00:00",
+                        "open": "100.0",
+                        "high": "101.0",
+                        "low": "99.8",
+                        "close": "100.8",
+                        "volume": "1200",
                     },
-                    "values": [
-                        {
-                            "datetime": "2026-04-22 14:00:00",
-                            "open": "88000.0",
-                            "high": "88500.0",
-                            "low": "87900.0",
-                            "close": "88300.0",
-                            "volume": "42",
-                        },
-                        {
-                            "datetime": "2026-04-22 13:45:00",
-                            "open": "87800.0",
-                            "high": "88150.0",
-                            "low": "87700.0",
-                            "close": "88000.0",
-                            "volume": "40",
-                        },
-                    ],
-                    "status": "ok",
-                },
+                    {
+                        "datetime": "2026-04-22 09:45:00",
+                        "open": "99.6",
+                        "high": "100.2",
+                        "low": "99.5",
+                        "close": "100.0",
+                        "volume": "1000",
+                    },
+                ],
+                "status": "ok",
             }
-        )
+        if "BTC/USD" in requested_symbols:
+            payload["BTC/USD"] = {
+                "meta": {
+                    "symbol": "BTC/USD",
+                    "interval": params["interval"],
+                    "exchange_timezone": "UTC",
+                    "type": "Digital Currency",
+                },
+                "values": [
+                    {
+                        "datetime": "2026-04-22 14:00:00",
+                        "open": "88000.0",
+                        "high": "88500.0",
+                        "low": "87900.0",
+                        "close": "88300.0",
+                        "volume": "42",
+                    },
+                    {
+                        "datetime": "2026-04-22 13:45:00",
+                        "open": "87800.0",
+                        "high": "88150.0",
+                        "low": "87700.0",
+                        "close": "88000.0",
+                        "volume": "40",
+                    },
+                ],
+                "status": "ok",
+            }
+        return FakeResponse(payload)
 
     monkeypatch.setattr(provider._session, "get", fake_get)
 
-    qqq_bars = provider.get_intraday_bars("QQQ", lookback_days=25)
-    btc_bars = provider.get_intraday_bars("BTC", lookback_days=25)
+    batch = provider.get_recent_bars_batch(("QQQ", "BTC"), interval="15m", lookback_days=25)
+    qqq_bars = batch["QQQ"]
+    btc_bars = batch["BTC"]
+    daily_qqq = provider.get_daily_bars("QQQ", lookback_days=10)
 
-    assert len(calls) == 1
+    assert len(calls) == 2
     assert calls[0]["interval"] == "15min"
     assert calls[0]["apikey"] == "test-key"
-    assert "QQQ" in calls[0]["symbol"]
-    assert "BTC/USD" in calls[0]["symbol"]
+    assert calls[0]["symbol"] == "QQQ,BTC/USD"
+    assert calls[1]["interval"] == "1day"
+    assert calls[1]["symbol"] == "QQQ"
     assert qqq_bars[-1].close == 100.8
     assert qqq_bars[-1].ts_ny.tzinfo == NY
     assert btc_bars[-1].symbol == "BTC"
     assert btc_bars[-1].ts_ny.tzinfo == NY
     assert btc_bars[-1].trading_date_ny == date(2026, 4, 22)
+    assert daily_qqq[-1].symbol == "QQQ"

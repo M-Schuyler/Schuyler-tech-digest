@@ -87,6 +87,7 @@ python main.py close-alert --now 2026-04-23T16:30:00-04:00
 - `STATE_DB_AUTH_TOKEN`
 - `MARKET_PROVIDER` (`yahoo` or `twelvedata`)
 - `TWELVEDATA_API_KEY` (required when `MARKET_PROVIDER=twelvedata`)
+- `MARKET_SYMBOL_BUDGET` (optional override; defaults to `8` for `twelvedata`)
 - `INTRADAY_INTERVAL_MINUTES`
 - `MAX_INTRADAY_ALERTS_PER_DAY`
 - `VOLUME_BASELINE_LOOKBACK_DAYS`
@@ -102,7 +103,9 @@ python main.py close-alert --now 2026-04-23T16:30:00-04:00
 - `MARKET_PROVIDER=twelvedata`
   - recommended production default
   - one provider covers US stocks and crypto
-  - provider batches the monitored symbol set per interval window, so one scan does not fan out into 11 serial HTTP requests
+  - provider only fetches the symbols each call actually needs
+  - default symbol budget is capped at `8`, so the free tier does not try to monitor all `11` symbols every 15 minutes
+  - close alerts reuse bars already stored by intraday scans instead of re-spending credits at `16:30` New York time
 
 ## GitHub Actions
 

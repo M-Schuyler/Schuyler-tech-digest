@@ -8,7 +8,7 @@ from zoneinfo import ZoneInfo
 
 import requests
 
-from ..config import MARKET_SYMBOLS, RuntimeSettings, get_symbol_profile
+from ..config import RuntimeSettings, get_symbol_profile
 from ..models import MarketBar
 
 logger = logging.getLogger(__name__)
@@ -35,7 +35,26 @@ class TwelveDataProvider:
                 )
             }
         )
-        self._batch_cache: dict[tuple[str, int], dict[str, list[MarketBar]]] = {}
+        self._batch_cache: dict[tuple[str, int, tuple[str, ...]], dict[str, list[MarketBar]]] = {}
+
+    def get_recent_bars_batch(
+        self,
+        symbols: Sequence[str],
+        interval: str,
+        lookback_days: int,
+    ) -> dict[str, list[MarketBar]]:
+        normalized_symbols = tuple(
+            dict.fromkeys(symbol.strip().upper() for symbol in symbols if symbol.strip())
+        )
+        if not normalized_symbols:
+            return {}
+
+        batch = self._load_batch(
+            symbols=normalized_symbols,
+            interval=interval,
+            lookback_days=lookback_days,
+        )
+        return {symbol: list(batch.get(symbol, [])) for symbol in normalized_symbols}
 
     def get_intraday_bars(self, symbol: str, lookback_days: int = 10) -> list[MarketBar]:
         return self.get_recent_bars(symbol, interval="15m", lookback_days=lookback_days)
@@ -44,7 +63,7 @@ class TwelveDataProvider:
         return self.get_recent_bars(symbol, interval="1d", lookback_days=lookback_days)
 
     def get_recent_bars(self, symbol: str, interval: str, lookback_days: int) -> list[MarketBar]:
-        batch = self._load_batch(interval=interval, lookback_days=lookback_days)
+        batch = self.get_recent_bars_batch((symbol,), interval=interval, lookback_days=lookback_days)
         return list(batch.get(symbol, []))
 
     def compute_volume_baseline(
@@ -82,21 +101,33 @@ class TwelveDataProvider:
 
         return sum(slot_samples.values()) / len(slot_samples)
 
-    def _load_batch(self, *, interval: str, lookback_days: int) -> dict[str, list[MarketBar]]:
-        cache_key = (interval, lookback_days)
+    def _load_batch(
+        self,
+        *,
+        symbols: Sequence[str],
+        interval: str,
+        lookback_days: int,
+    ) -> dict[str, list[MarketBar]]:
+        cache_key = (interval, lookback_days, tuple(symbols))
         cached = self._batch_cache.get(cache_key)
         if cached is not None:
             return cached
 
-        batch = self._fetch_batch(interval=interval, lookback_days=lookback_days)
+        batch = self._fetch_batch(symbols=symbols, interval=interval, lookback_days=lookback_days)
         self._batch_cache[cache_key] = batch
         return batch
 
-    def _fetch_batch(self, *, interval: str, lookback_days: int) -> dict[str, list[MarketBar]]:
+    def _fetch_batch(
+        self,
+        *,
+        symbols: Sequence[str],
+        interval: str,
+        lookback_days: int,
+    ) -> dict[str, list[MarketBar]]:
         td_interval = INTERVAL_MAP.get(interval, interval)
         params = {
             "apikey": self.settings.twelvedata_api_key,
-            "symbol": ",".join(self._provider_symbol(symbol) for symbol in MARKET_SYMBOLS),
+            "symbol": ",".join(self._provider_symbol(symbol) for symbol in symbols),
             "interval": td_interval,
             "outputsize": str(self._output_size(interval, lookback_days)),
             "format": "JSON",
@@ -143,7 +174,7 @@ class TwelveDataProvider:
             meta = series_payload.get("meta") or {}
             raw_symbol = str(meta.get("symbol") or key)
             internal_symbol = self._internal_symbol(raw_symbol)
-            if internal_symbol not in MARKET_SYMBOLS:
+            if internal_symbol not in symbols:
                 continue
             parsed[internal_symbol] = self._parse_series(internal_symbol, series_payload, interval)
 
