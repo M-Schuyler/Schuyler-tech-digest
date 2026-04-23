@@ -47,3 +47,13 @@ def test_gitignore_keeps_local_personal_site_playground_out_of_repo() -> None:
     gitignore = (REPO_ROOT / ".gitignore").read_text(encoding="utf-8")
 
     assert "playgrounds/M-Schuyler.github.io/" in gitignore
+
+
+def test_workflows_accept_twelvedata_configuration() -> None:
+    intraday = read_workflow("intraday-market-scan.yml")
+    close = read_workflow("market-close-alert.yml")
+    daily = read_workflow("daily-ai-market-brief.yml")
+
+    for workflow in (intraday, close, daily):
+        assert 'MARKET_PROVIDER: ${{ vars.MARKET_PROVIDER || \'yahoo\' }}' in workflow
+        assert "TWELVEDATA_API_KEY: ${{ secrets.TWELVEDATA_API_KEY }}" in workflow

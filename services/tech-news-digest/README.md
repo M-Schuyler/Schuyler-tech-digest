@@ -129,6 +129,13 @@ Optional Secrets:
 
 - `GEMINI_API_KEY`
 - `OPENAI_API_KEY`
+- `TWELVEDATA_API_KEY` (required only when `MARKET_PROVIDER=twelvedata`)
+
+Recommended GitHub Variables:
+
+- `MARKET_PROVIDER`
+  - set to `yahoo` for zero-setup smoke runs
+  - set to `twelvedata` for production intraday / close jobs
 
 ## State Storage
 

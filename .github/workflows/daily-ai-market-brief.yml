@@ -22,7 +22,8 @@ jobs:
       TELEGRAM_CHAT_ID_MAIN: ${{ secrets.TELEGRAM_CHAT_ID_MAIN }}
       STATE_DB_URL: ${{ secrets.STATE_DB_URL }}
       STATE_DB_AUTH_TOKEN: ${{ secrets.STATE_DB_AUTH_TOKEN }}
-      MARKET_PROVIDER: yahoo
+      TWELVEDATA_API_KEY: ${{ secrets.TWELVEDATA_API_KEY }}
+      MARKET_PROVIDER: ${{ vars.MARKET_PROVIDER || 'yahoo' }}
       MAX_ARTICLES_PER_SOURCE: "10"
       MAX_BRIEFING_ITEMS: "10"
       REQUEST_TIMEOUT: "20"

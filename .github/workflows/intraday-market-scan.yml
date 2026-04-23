@@ -24,7 +24,8 @@ jobs:
       TELEGRAM_CHAT_ID_SIDE: ${{ secrets.TELEGRAM_CHAT_ID_SIDE }}
       STATE_DB_URL: ${{ secrets.STATE_DB_URL }}
       STATE_DB_AUTH_TOKEN: ${{ secrets.STATE_DB_AUTH_TOKEN }}
-      MARKET_PROVIDER: yahoo
+      TWELVEDATA_API_KEY: ${{ secrets.TWELVEDATA_API_KEY }}
+      MARKET_PROVIDER: ${{ vars.MARKET_PROVIDER || 'yahoo' }}
       MAX_INTRADAY_ALERTS_PER_DAY: "5"
       INTRADAY_INTERVAL_MINUTES: "15"
 
