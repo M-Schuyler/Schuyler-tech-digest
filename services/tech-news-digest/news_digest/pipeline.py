@@ -60,6 +60,39 @@ class NewsPipeline:
 
     def run(self, report_date: date | None = None) -> tuple[str, int]:
         run_day = report_date or date.today()
+        selected, extraction_attempts, candidate_count = self.collect_selected(report_date=run_day)
+
+        for briefing, raw in selected:
+            article_day = raw.published_at.date().isoformat() if raw.published_at else run_day.isoformat()
+            self.repository.upsert(
+                StoredArticle(
+                    title=briefing.title,
+                    source=raw.source,
+                    summary=_format_summary_for_storage(briefing),
+                    keywords=briefing.category,
+                    url=briefing.url,
+                    date=article_day,
+                )
+            )
+
+        report_items = [item for item, _ in selected]
+        report_path = self.report_writer.write(run_day, report_items)
+        self.notifier.send_report(run_day, report_path, len(report_items))
+        logger.info(
+            "Report generated: %s (items=%s, extraction_attempts=%s, candidates=%s)",
+            report_path,
+            len(report_items),
+            extraction_attempts,
+            candidate_count,
+        )
+
+        return str(report_path), len(report_items)
+
+    def collect_selected(
+        self,
+        report_date: date | None = None,
+    ) -> tuple[list[tuple[BriefingItem, ArticleRaw]], int, int]:
+        run_day = report_date or date.today()
 
         seeds = _dedupe_seeds(self.fetcher.fetch())
         logger.info("After dedupe, %s article seeds remain", len(seeds))
@@ -115,32 +148,13 @@ class NewsPipeline:
             reverse=True,
         )
         selected = candidates[: self.settings.max_briefing_items]
-
-        for briefing, raw in selected:
-            article_day = raw.published_at.date().isoformat() if raw.published_at else run_day.isoformat()
-            self.repository.upsert(
-                StoredArticle(
-                    title=briefing.title,
-                    source=raw.source,
-                    summary=_format_summary_for_storage(briefing),
-                    keywords=briefing.category,
-                    url=briefing.url,
-                    date=article_day,
-                )
-            )
-
-        report_items = [item for item, _ in selected]
-        report_path = self.report_writer.write(run_day, report_items)
-        self.notifier.send_report(run_day, report_path, len(report_items))
         logger.info(
-            "Report generated: %s (items=%s, extraction_attempts=%s, candidates=%s)",
-            report_path,
-            len(report_items),
+            "Collected digest candidates (selected=%s, extraction_attempts=%s, candidates=%s)",
+            len(selected),
             extraction_attempts,
             len(candidates),
         )
-
-        return str(report_path), len(report_items)
+        return selected, extraction_attempts, len(candidates)
 
 
 def _dedupe_seeds(seeds: list[ArticleSeed]) -> list[ArticleSeed]:

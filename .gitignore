@@ -6,6 +6,7 @@ __pycache__/
 
 logs/
 services/tech-news-digest/reports/*.md
+services/tech-news-digest/reports/assets/
 services/tech-news-digest/data/*.db
 personal-website/.next/
 personal-website/node_modules/

@@ -1,0 +1,36 @@
+name: Market Close Alert
+
+on:
+  schedule:
+    # Run every 30 minutes on weekdays; job itself decides whether the NY close window is open.
+    - cron: "*/30 * * * 1-5"
+  workflow_dispatch:
+
+jobs:
+  close-alert:
+    runs-on: ubuntu-latest
+    env:
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      TELEGRAM_BOT_TOKEN_SIDE: ${{ secrets.TELEGRAM_BOT_TOKEN_SIDE }}
+      TELEGRAM_CHAT_ID_SIDE: ${{ secrets.TELEGRAM_CHAT_ID_SIDE }}
+      STATE_DB_URL: ${{ secrets.STATE_DB_URL }}
+      STATE_DB_AUTH_TOKEN: ${{ secrets.STATE_DB_AUTH_TOKEN }}
+      MARKET_PROVIDER: yahoo
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        working-directory: services/tech-news-digest
+        run: pip install -r requirements.txt
+
+      - name: Run close alert
+        working-directory: services/tech-news-digest
+        run: python main.py close-alert
