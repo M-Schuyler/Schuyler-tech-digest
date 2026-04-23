@@ -1,5 +1,8 @@
 name: Daily AI + Market Brief
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 on:
   schedule:
     # 08:00 Asia/Shanghai = 00:00 UTC

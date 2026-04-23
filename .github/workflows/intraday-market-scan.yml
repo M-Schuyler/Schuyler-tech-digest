@@ -1,10 +1,18 @@
 name: Intraday Market Scan
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 on:
   schedule:
     # Run every 15 minutes on weekdays; job itself decides whether NYSE is open.
     - cron: "*/15 * * * 1-5"
   workflow_dispatch:
+    inputs:
+      run_at:
+        description: "Optional ISO-8601 timestamp override for manual verification"
+        required: false
+        type: string
 
 jobs:
   intraday-scan:
@@ -35,4 +43,11 @@ jobs:
 
       - name: Run intraday scan
         working-directory: services/tech-news-digest
-        run: python main.py intraday-scan
+        env:
+          RUN_AT_OVERRIDE: ${{ github.event.inputs.run_at }}
+        run: |
+          if [ -n "$RUN_AT_OVERRIDE" ]; then
+            python main.py intraday-scan --now "$RUN_AT_OVERRIDE"
+          else
+            python main.py intraday-scan
+          fi

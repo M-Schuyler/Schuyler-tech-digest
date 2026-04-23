@@ -10,5 +10,6 @@ services/tech-news-digest/reports/assets/
 services/tech-news-digest/data/*.db
 personal-website/.next/
 personal-website/node_modules/
+playgrounds/M-Schuyler.github.io/
 
 .DS_Store
