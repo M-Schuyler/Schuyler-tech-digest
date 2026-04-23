@@ -31,6 +31,18 @@ def test_workflows_opt_in_to_node24_runtime() -> None:
         assert "FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: \"true\"" in workflow
 
 
+def test_workflows_use_node24_capable_action_versions() -> None:
+    intraday = read_workflow("intraday-market-scan.yml")
+    close = read_workflow("market-close-alert.yml")
+    daily = read_workflow("daily-ai-market-brief.yml")
+
+    for workflow in (intraday, close, daily):
+        assert "uses: actions/checkout@v6" in workflow
+        assert "uses: actions/setup-python@v6" in workflow
+
+    assert "uses: actions/upload-artifact@v7" in daily
+
+
 def test_gitignore_keeps_local_personal_site_playground_out_of_repo() -> None:
     gitignore = (REPO_ROOT / ".gitignore").read_text(encoding="utf-8")
 
