@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from datetime import date, datetime
+from datetime import date, datetime, time, timezone
 from zoneinfo import ZoneInfo
 
 from ..config import RuntimeSettings
@@ -10,6 +10,7 @@ from ..intelligence.topic_ranker import TopicRanker
 from ..intelligence.watchlist_builder import WatchlistBuilder
 from ..market.provider import MarketProvider
 from ..models import BriefRecord, CloseSummary, DailyBrief
+from ..monitoring.models import MonitorSignal, SignalLevel
 from ..pipeline import NewsPipeline
 from ..report import BriefingItem
 from ..scheduling.calendar import NYSECalendar
@@ -53,6 +54,15 @@ class DailyBriefComposer:
             close_summary=close_summary,
             watchlist=watchlist,
         )
+        monitoring_signal_lines = self._monitoring_signal_lines(brief_date)
+        if monitoring_signal_lines:
+            cross_section = "\n".join(
+                [
+                    cross_section,
+                    "【监控信号】",
+                    *monitoring_signal_lines,
+                ]
+            )
 
         return DailyBrief(
             brief_date_sh=brief_date,
@@ -153,6 +163,16 @@ class DailyBriefComposer:
                 chosen.append(fallback)
         return chosen[:2]
 
+    def _monitoring_signal_lines(self, brief_date: date) -> list[str]:
+        since_utc = datetime.combine(brief_date, time.min, tzinfo=self._brief_tz).astimezone(timezone.utc)
+        signals = self.state_store.list_monitor_signals(
+            level=SignalLevel.DIGEST_CANDIDATE,
+            since_utc=since_utc,
+            limit=8,
+        )
+        ranked = sorted(signals, key=lambda signal: signal.score, reverse=True)
+        return [_format_monitoring_signal_line(signal) for signal in ranked[:3]]
+
 
 def _primary_summary(item: BriefingItem) -> str:
     if item.summary_zh:
@@ -160,3 +180,9 @@ def _primary_summary(item: BriefingItem) -> str:
     if item.summary_en:
         return item.summary_en[0]
     return "暂无摘要。"
+
+
+def _format_monitoring_signal_line(signal: MonitorSignal) -> str:
+    symbols = " / ".join(signal.symbols) or "无映射标的"
+    entities = " / ".join(signal.entities) or "未命名实体"
+    return f"• {symbols}：{entities} - {signal.reason}"
