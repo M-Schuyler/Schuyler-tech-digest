@@ -57,3 +57,12 @@ def test_workflows_accept_twelvedata_configuration() -> None:
     for workflow in (intraday, close, daily):
         assert 'MARKET_PROVIDER: ${{ vars.MARKET_PROVIDER || \'yahoo\' }}' in workflow
         assert "TWELVEDATA_API_KEY: ${{ secrets.TWELVEDATA_API_KEY }}" in workflow
+
+
+def test_monitoring_workflow_exists_and_runs_monitor_scan() -> None:
+    workflow = read_workflow("monitoring-scan.yml")
+
+    assert "monitor-scan" in workflow
+    assert "MONITORING_WATCHLIST_PATH" in workflow
+    assert "TELEGRAM_BOT_TOKEN_SIDE" in workflow
+    assert "schedule:" in workflow

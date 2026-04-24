@@ -1,0 +1,48 @@
+name: Personal Intelligence Monitor
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+    inputs:
+      run_at:
+        description: "Optional ISO-8601 timestamp override"
+        required: false
+        type: string
+
+jobs:
+  monitor-scan:
+    runs-on: ubuntu-latest
+    env:
+      STATE_DB_URL: ${{ secrets.STATE_DB_URL }}
+      STATE_DB_AUTH_TOKEN: ${{ secrets.STATE_DB_AUTH_TOKEN }}
+      TELEGRAM_BOT_TOKEN_SIDE: ${{ secrets.TELEGRAM_BOT_TOKEN_SIDE }}
+      TELEGRAM_CHAT_ID_SIDE: ${{ secrets.TELEGRAM_CHAT_ID_SIDE }}
+      MONITORING_WATCHLIST_PATH: config/watchlist.example.json
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        working-directory: services/tech-news-digest
+        run: pip install -r requirements.txt
+
+      - name: Run monitor scan
+        working-directory: services/tech-news-digest
+        env:
+          RUN_AT_OVERRIDE: ${{ github.event.inputs.run_at }}
+        run: |
+          if [ -n "$RUN_AT_OVERRIDE" ]; then
+            python main.py monitor-scan --now "$RUN_AT_OVERRIDE"
+          else
+            python main.py monitor-scan
+          fi

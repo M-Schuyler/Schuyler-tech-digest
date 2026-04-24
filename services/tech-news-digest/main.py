@@ -4,7 +4,12 @@ import argparse
 import logging
 from datetime import date, datetime
 
-from news_digest.scheduling.jobs import run_close_alert, run_daily_brief, run_intraday_scan
+from news_digest.scheduling.jobs import (
+    run_close_alert,
+    run_daily_brief,
+    run_intraday_scan,
+    run_monitor_scan,
+)
 
 
 def parse_args() -> argparse.Namespace:
@@ -25,6 +30,14 @@ def parse_args() -> argparse.Namespace:
 
     close = subparsers.add_parser("close-alert", help="Run the market close summary")
     close.add_argument(
+        "--now",
+        type=str,
+        default=None,
+        help="Override time in ISO-8601 format with timezone",
+    )
+
+    monitor = subparsers.add_parser("monitor-scan", help="Run one personal intelligence monitoring scan")
+    monitor.add_argument(
         "--now",
         type=str,
         default=None,
@@ -69,6 +82,16 @@ def main() -> None:
             print("Close alert skipped (outside close window).")
         else:
             print(f"Close summary generated for {summary.trade_date_ny.isoformat()}")
+        return
+
+    if command == "monitor-scan":
+        now = datetime.fromisoformat(args.now) if getattr(args, "now", None) else None
+        result = run_monitor_scan(now=now)
+        print(
+            "Monitoring scan finished. "
+            f"fetched={result.fetched_count} new_events={result.new_event_count} "
+            f"signals={result.signal_count} dispatched={result.dispatched_count}"
+        )
         return
 
     raise ValueError(f"Unsupported command: {command}")
