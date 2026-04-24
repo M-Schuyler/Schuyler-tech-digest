@@ -10,6 +10,8 @@ from ..briefs.render_card import DailyBriefCardRenderer
 from ..briefs.render_trend import TrendChartRenderer
 from ..config import load_runtime_settings
 from ..market.provider import create_market_provider
+from ..monitoring.service import MonitoringService
+from ..monitoring.watchlist import load_watchlist
 from ..pipeline import NewsPipeline
 from ..routing.dispatcher import TelegramDispatcher
 from ..scheduling.calendar import NYSECalendar
@@ -74,6 +76,19 @@ def run_close_alert(now: datetime | None = None):
         provider=provider,
         state_store=store,
         calendar=calendar,
+        dispatcher=dispatcher,
+    )
+    return service.run(now=now)
+
+
+def run_monitor_scan(now: datetime | None = None):
+    settings = load_runtime_settings()
+    watchlist = load_watchlist(settings.monitoring_watchlist_path)
+    store = create_state_store(settings)
+    dispatcher = TelegramDispatcher(settings)
+    service = MonitoringService(
+        watchlist=watchlist,
+        state_store=store,
         dispatcher=dispatcher,
     )
     return service.run(now=now)
