@@ -31,6 +31,12 @@ class FakeDispatcher:
 
     def send_monitor_signal(self, signal, event):
         self.sent.append((signal, event))
+        return True
+
+
+class DisabledDispatcher:
+    def send_monitor_signal(self, signal, event):
+        return False
 
 
 def test_monitoring_service_records_event_signal_and_dispatches_interrupt(tmp_path) -> None:
@@ -130,3 +136,39 @@ def test_monitoring_service_enforces_run_interrupt_budget_and_records_suppressed
     assert len(dispatcher.sent) == 3
     assert [item.level for item in signals].count(SignalLevel.INTERRUPT) == 3
     assert [item.suppressed_reason for item in signals].count("run_budget_exceeded") == 2
+
+
+def test_monitoring_service_does_not_mark_dispatched_when_dispatcher_is_disabled(tmp_path) -> None:
+    watchlist = MonitoringWatchlist(
+        entities=(
+            WatchEntity(
+                key="openai",
+                label="OpenAI",
+                aliases=("OpenAI",),
+                symbols=("MSFT", "NVDA"),
+                tags=("ai", "agent"),
+                priority=5,
+            ),
+        ),
+        sources=(
+            SourceSpec(
+                key="openai-news",
+                kind=SourceKind.RSS,
+                url="https://openai.com/news/rss.xml",
+                trust_tier=1,
+                tags=("official", "ai"),
+            ),
+        ),
+    )
+    store = StateStore(sqlite_path=tmp_path / "state.db")
+    service = MonitoringService(
+        watchlist=watchlist,
+        state_store=store,
+        dispatcher=DisabledDispatcher(),
+        adapter_factory=lambda source: FakeAdapter(source),
+    )
+
+    result = service.run(now=datetime(2026, 4, 24, 0, 0, tzinfo=timezone.utc))
+
+    assert result.dispatched_count == 0
+    assert store.list_monitor_signals(level=SignalLevel.INTERRUPT)[0].dispatched_at is None

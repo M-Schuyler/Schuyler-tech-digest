@@ -28,8 +28,8 @@ class TelegramDispatcher:
         for chunk in split_text(text):
             self.side_bot.send_message(chunk)
 
-    def send_monitor_signal(self, signal: MonitorSignal, event: MonitorEvent) -> None:
-        self.side_bot.send_message(format_monitor_signal(signal, event))
+    def send_monitor_signal(self, signal: MonitorSignal, event: MonitorEvent) -> bool:
+        return self.side_bot.send_message(format_monitor_signal(signal, event))
 
 
 def format_daily_brief(brief: DailyBrief) -> str:

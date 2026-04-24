@@ -86,7 +86,9 @@ class MonitoringService:
             persisted_signal = self.state_store.record_monitor_signal(signal)
             if should_dispatch_interrupt(persisted_signal, recent_dispatched=recent_dispatched):
                 event_to_send = events_by_id[persisted_signal.event_id]
-                self.dispatcher.send_monitor_signal(persisted_signal, event_to_send)
+                sent = self.dispatcher.send_monitor_signal(persisted_signal, event_to_send)
+                if sent is False:
+                    continue
                 self.state_store.mark_monitor_signal_dispatched(persisted_signal.id, run_at)
                 dispatched_count += 1
 
