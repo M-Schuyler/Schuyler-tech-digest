@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from collections import defaultdict
 from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
 from ..config import RuntimeSettings
 from ..intelligence.cross_correlator import CrossCorrelator
+from ..intelligence.theme_clusterer import BriefTheme, ThemeClusterer
 from ..intelligence.topic_ranker import TopicRanker
 from ..intelligence.watchlist_builder import WatchlistBuilder
 from ..market.provider import MarketProvider
@@ -32,6 +32,7 @@ class DailyBriefComposer:
         self.state_store = state_store
         self.calendar = calendar
         self.topic_ranker = TopicRanker(settings)
+        self.theme_clusterer = ThemeClusterer()
         self.watchlist_builder = WatchlistBuilder()
         self.cross_correlator = CrossCorrelator()
         self._brief_tz = ZoneInfo(settings.brief_timezone)
@@ -43,10 +44,11 @@ class DailyBriefComposer:
         selected, _, _ = self.pipeline.collect_selected(report_date=brief_date)
         items = [item for item, _ in selected]
 
-        top_three = self.topic_ranker.rank(items)
+        themes = self.theme_clusterer.cluster(items)
+        top_three = self._build_top_three(items, themes)
         watchlist = self.watchlist_builder.build(items, close_summary)
-        ai_section = self._build_ai_section(items)
-        tech_section = self._build_tech_section(items)
+        ai_section = self._build_ai_section(items, themes)
+        tech_section = self._build_tech_section(items, themes)
         market_section = self._build_market_section(reference_trade_date, close_summary)
         cross_section = self.cross_correlator.compose(
             top_three=top_three,
@@ -90,31 +92,29 @@ class DailyBriefComposer:
         self.state_store.record_brief(record)
         return record
 
-    def _build_ai_section(self, items: list[BriefingItem]) -> str:
-        ai_items = [item for item in items if item.category == "AI"][:3]
-        if not ai_items:
+    def _build_top_three(self, items: list[BriefingItem], themes: list[BriefTheme]) -> list[str]:
+        top_three = [theme.judgment for theme in themes[:3]]
+        if len(top_three) >= 3:
+            return top_three[:3]
+
+        for fallback in self.topic_ranker.rank(items):
+            if fallback not in top_three:
+                top_three.append(fallback)
+            if len(top_three) == 3:
+                break
+        return top_three[:3]
+
+    def _build_ai_section(self, items: list[BriefingItem], themes: list[BriefTheme]) -> str:
+        ai_themes = [theme for theme in themes if theme.category == "AI"]
+        if not ai_themes:
             return "• 今天没有新的重锤 AI 新闻进来，先看昨夜主线是否继续被价格确认。"
-        return "\n".join(
-            f"• {item.title}：{_primary_summary(item)}"
-            for item in ai_items
-        )
+        return "\n".join(_format_theme_block(theme) for theme in ai_themes[:2])
 
-    def _build_tech_section(self, items: list[BriefingItem]) -> str:
-        sections: dict[str, list[BriefingItem]] = defaultdict(list)
-        for item in items:
-            if item.category != "AI":
-                sections[item.category].append(item)
-
-        selected: list[BriefingItem] = []
-        for category in ("Big Tech", "Chips", "Robotics", "Startups"):
-            selected.extend(sections.get(category, [])[:1])
-
-        if not selected:
+    def _build_tech_section(self, items: list[BriefingItem], themes: list[BriefTheme]) -> str:
+        tech_themes = [theme for theme in themes if theme.category != "AI"]
+        if not tech_themes:
             return "• 科技与公司层面没有比 AI 主线更强的新增变量，今天先看核心资产承接。"
-        return "\n".join(
-            f"• {item.title}：{_primary_summary(item)}"
-            for item in selected[:3]
-        )
+        return "\n".join(_format_theme_block(theme) for theme in tech_themes[:2])
 
     def _build_market_section(
         self,
@@ -154,9 +154,19 @@ class DailyBriefComposer:
         return chosen[:2]
 
 
-def _primary_summary(item: BriefingItem) -> str:
-    if item.summary_zh:
-        return item.summary_zh[0]
-    if item.summary_en:
-        return item.summary_en[0]
-    return "暂无摘要。"
+def _format_theme_block(theme: BriefTheme) -> str:
+    evidence = "；".join(theme.evidence[:2]) or "暂无可追溯来源"
+    return "\n".join(
+        [
+            f"• 主线：{theme.name}",
+            f"  判断：{_strip_theme_name(theme.judgment, theme.name)}",
+            f"  证据：{evidence}",
+        ]
+    )
+
+
+def _strip_theme_name(judgment: str, theme_name: str) -> str:
+    prefix = f"{theme_name}："
+    if judgment.startswith(prefix):
+        return judgment[len(prefix):]
+    return judgment
