@@ -78,11 +78,15 @@ class NewsSummarizer:
         self._mymemory_available = True
 
         openai_api_key = os.getenv("OPENAI_API_KEY", "").strip()
+        openai_base_url = os.getenv("OPENAI_BASE_URL", "").strip()
         if openai_api_key:
             try:
                 from openai import OpenAI
 
-                self._openai_client = OpenAI(api_key=openai_api_key)
+                openai_kwargs = {"api_key": openai_api_key, "timeout": settings.request_timeout}
+                if openai_base_url:
+                    openai_kwargs["base_url"] = openai_base_url
+                self._openai_client = OpenAI(**openai_kwargs)
             except Exception as exc:  # noqa: BLE001
                 logger.warning("OpenAI client init failed: %s", exc)
 
@@ -92,17 +96,17 @@ class NewsSummarizer:
 
         assessment: ArticleAssessment | None = None
 
-        if self._gemini_api_key:
-            try:
-                assessment = self._assess_with_gemini(article)
-            except Exception as exc:  # noqa: BLE001
-                logger.warning("Gemini assess failed for %s: %s", article.url, exc)
-
-        if not assessment and self._openai_client:
+        if self._openai_client:
             try:
                 assessment = self._assess_with_openai(article)
             except Exception as exc:  # noqa: BLE001
                 logger.warning("OpenAI assess failed for %s: %s", article.url, exc)
+
+        if not assessment and self._gemini_api_key:
+            try:
+                assessment = self._assess_with_gemini(article)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("Gemini assess failed for %s: %s", article.url, exc)
 
         if not assessment:
             assessment = self._assess_with_heuristic(article)

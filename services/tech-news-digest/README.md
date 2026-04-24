@@ -67,10 +67,11 @@ python main.py close-alert --now 2026-04-23T16:30:00-04:00
 
 ## Environment Variables
 
-- `GEMINI_API_KEY` (recommended)
+- `OPENAI_API_KEY` (preferred)
+- `OPENAI_BASE_URL` (optional, e.g. `http://127.0.0.1:8317/v1` for CLIProxyAPI)
+- `OPENAI_MODEL` (default: `gpt-5.4-mini`)
+- `GEMINI_API_KEY` (optional fallback)
 - `GEMINI_MODEL` (default: `3.1-flash-preview`)
-- `OPENAI_API_KEY` (optional fallback)
-- `OPENAI_MODEL` (default: `gpt-4o-mini`)
 - `MAX_ARTICLES_PER_SOURCE` (default: `20`)
 - `MAX_BRIEFING_ITEMS` (default: `10`)
 - `MIN_IMPORTANCE_SCORE` (default: `55`)
