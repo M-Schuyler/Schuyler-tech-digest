@@ -4,6 +4,7 @@ from pathlib import Path
 
 from ..config import RuntimeSettings
 from ..models import AlertEvent, CloseSummary, DailyBrief
+from ..monitoring.models import MonitorEvent, MonitorSignal
 from .telegram_client import TelegramBotClient, split_text
 
 
@@ -26,6 +27,9 @@ class TelegramDispatcher:
         self.side_bot.send_photo(card_path, caption="收盘总结")
         for chunk in split_text(text):
             self.side_bot.send_message(chunk)
+
+    def send_monitor_signal(self, signal: MonitorSignal, event: MonitorEvent) -> None:
+        self.side_bot.send_message(format_monitor_signal(signal, event))
 
 
 def format_daily_brief(brief: DailyBrief) -> str:
@@ -50,5 +54,18 @@ def format_close_summary(summary: CloseSummary) -> str:
             f"🤖【AI / 科技主线】\n{summary.ai_tech_thread}",
             f"₿【币圈情绪】\n{summary.crypto_mood}",
             f"👀【明天继续盯什么】\n{watch or '• 暂无新的优先观察标的。'}",
+        ]
+    )
+
+
+def format_monitor_signal(signal: MonitorSignal, event: MonitorEvent) -> str:
+    symbols = " / ".join(signal.symbols) or "无映射标的"
+    return "\n".join(
+        [
+            "🛰️【实时情报信号】",
+            f"{event.title}",
+            f"标的：{symbols}",
+            f"理由：{signal.reason}",
+            f"来源：{event.url}",
         ]
     )
