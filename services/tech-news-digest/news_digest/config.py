@@ -19,7 +19,7 @@ class Settings:
     max_articles_per_source: int = 20
     request_timeout: int = 20
     openai_model: str = "gpt-4o-mini"
-    gemini_model: str = "gemini-2.5-flash"
+    gemini_model: str = "3.1-flash-preview"
     max_briefing_items: int = 10
 
 
@@ -98,7 +98,7 @@ DEFAULT_SETTINGS = Settings(
     max_articles_per_source=int(os.getenv("MAX_ARTICLES_PER_SOURCE", "20")),
     request_timeout=int(os.getenv("REQUEST_TIMEOUT", "20")),
     openai_model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
-    gemini_model=os.getenv("GEMINI_MODEL", "gemini-2.5-flash"),
+    gemini_model=os.getenv("GEMINI_MODEL", "3.1-flash-preview"),
     max_briefing_items=int(os.getenv("MAX_BRIEFING_ITEMS", "10")),
 )
 

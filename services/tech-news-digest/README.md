@@ -68,7 +68,7 @@ python main.py close-alert --now 2026-04-23T16:30:00-04:00
 ## Environment Variables
 
 - `GEMINI_API_KEY` (recommended)
-- `GEMINI_MODEL` (default: `gemini-2.5-flash`)
+- `GEMINI_MODEL` (default: `3.1-flash-preview`)
 - `OPENAI_API_KEY` (optional fallback)
 - `OPENAI_MODEL` (default: `gpt-4o-mini`)
 - `MAX_ARTICLES_PER_SOURCE` (default: `20`)
