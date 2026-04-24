@@ -11,6 +11,7 @@ DATA_DIR = BASE_DIR / "data"
 REPORT_DIR = BASE_DIR / "reports"
 STATE_DB_PATH = DATA_DIR / "state.db"
 ASSET_DIR = REPORT_DIR / "assets"
+MONITORING_WATCHLIST_PATH = BASE_DIR / "config" / "watchlist.example.json"
 
 
 @dataclass(frozen=True)
@@ -67,6 +68,7 @@ class RuntimeSettings:
     font_path: str
     chart_font_path: str
     min_official_source_weight: int
+    monitoring_watchlist_path: Path
 
 
 MARKET_SYMBOLS: dict[str, SymbolProfile] = {
@@ -146,6 +148,9 @@ def load_runtime_settings() -> RuntimeSettings:
         font_path=os.getenv("CARD_FONT_PATH", "").strip(),
         chart_font_path=os.getenv("CHART_FONT_PATH", "").strip(),
         min_official_source_weight=int(os.getenv("MIN_OFFICIAL_SOURCE_WEIGHT", "25")),
+        monitoring_watchlist_path=Path(
+            os.getenv("MONITORING_WATCHLIST_PATH", str(MONITORING_WATCHLIST_PATH))
+        ),
     )
 
 

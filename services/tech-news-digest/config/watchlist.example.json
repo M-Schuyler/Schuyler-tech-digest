@@ -1,0 +1,62 @@
+{
+  "entities": [
+    {
+      "key": "openai",
+      "label": "OpenAI",
+      "aliases": ["OpenAI", "ChatGPT", "GPT"],
+      "symbols": ["MSFT", "NVDA"],
+      "tags": ["ai", "model", "agent"],
+      "priority": 5
+    },
+    {
+      "key": "anthropic",
+      "label": "Anthropic",
+      "aliases": ["Anthropic", "Claude"],
+      "symbols": ["GOOGL", "AMZN"],
+      "tags": ["ai", "model", "agent"],
+      "priority": 4
+    },
+    {
+      "key": "nvidia",
+      "label": "NVIDIA",
+      "aliases": ["NVIDIA", "Nvidia", "NVDA", "GPU", "Blackwell"],
+      "symbols": ["NVDA", "AMD", "QQQ"],
+      "tags": ["ai", "compute", "chips"],
+      "priority": 5
+    },
+    {
+      "key": "apple",
+      "label": "Apple",
+      "aliases": ["Apple", "AAPL", "iPhone", "Apple Intelligence"],
+      "symbols": ["AAPL", "QQQ"],
+      "tags": ["big-tech", "device-ai"],
+      "priority": 4
+    }
+  ],
+  "sources": [
+    {
+      "key": "openai-news",
+      "kind": "rss",
+      "url": "https://openai.com/news/rss.xml",
+      "trust_tier": 1,
+      "tags": ["ai", "official"],
+      "enabled": true
+    },
+    {
+      "key": "hacker-news",
+      "kind": "rss",
+      "url": "https://hnrss.org/frontpage",
+      "trust_tier": 3,
+      "tags": ["tech", "community"],
+      "enabled": true
+    },
+    {
+      "key": "techcrunch",
+      "kind": "rss",
+      "url": "https://techcrunch.com/feed/",
+      "trust_tier": 3,
+      "tags": ["tech", "startup"],
+      "enabled": true
+    }
+  ]
+}

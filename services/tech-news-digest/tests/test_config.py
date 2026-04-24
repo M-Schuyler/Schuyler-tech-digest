@@ -15,3 +15,11 @@ def test_runtime_settings_do_not_fallback_to_legacy_single_bot_env(monkeypatch) 
 
     assert not settings.main_bot.enabled
     assert not settings.side_bot.enabled
+
+
+def test_runtime_settings_exposes_monitoring_watchlist_path(monkeypatch) -> None:
+    monkeypatch.delenv("MONITORING_WATCHLIST_PATH", raising=False)
+
+    settings = load_runtime_settings()
+
+    assert settings.monitoring_watchlist_path.name == "watchlist.example.json"
