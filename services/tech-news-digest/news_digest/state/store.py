@@ -11,6 +11,7 @@ from zoneinfo import ZoneInfo
 
 from ..config import RuntimeSettings
 from ..models import AlertEvent, BriefRecord, CloseSummary, MarketBar, WatchSignal
+from ..monitoring.models import MonitorEvent, MonitorSignal, SignalLevel
 
 
 class StateStore:
@@ -318,6 +319,182 @@ class StateStore:
             else None,
         )
 
+    def record_monitor_event(self, event: MonitorEvent) -> MonitorEvent:
+        self._execute(
+            """
+            INSERT OR IGNORE INTO monitor_events (
+                source_key,
+                source_kind,
+                title,
+                url,
+                published_at_utc,
+                first_seen_at_utc,
+                content_hint,
+                event_hash,
+                entities_json,
+                symbols_json,
+                tags_json,
+                trust_tier,
+                raw_metadata_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                event.source_key,
+                event.source_kind,
+                event.title,
+                event.url,
+                _to_utc_iso(event.published_at) if event.published_at else None,
+                _to_utc_iso(event.first_seen_at),
+                event.content_hint,
+                event.event_hash,
+                json.dumps(list(event.entities)),
+                json.dumps(list(event.symbols)),
+                json.dumps(list(event.tags)),
+                event.trust_tier,
+                json.dumps(event.raw_metadata),
+            ),
+        )
+        persisted = self.get_monitor_event_by_hash(event.event_hash)
+        if persisted is None:
+            raise RuntimeError(f"Failed to persist monitor event: {event.event_hash}")
+        return persisted
+
+    def get_monitor_event_by_hash(self, event_hash: str) -> MonitorEvent | None:
+        row = self._query_one(
+            """
+            SELECT
+                id,
+                source_key,
+                source_kind,
+                title,
+                url,
+                published_at_utc,
+                first_seen_at_utc,
+                content_hint,
+                event_hash,
+                entities_json,
+                symbols_json,
+                tags_json,
+                trust_tier,
+                raw_metadata_json
+            FROM monitor_events
+            WHERE event_hash = ?
+            """,
+            (event_hash,),
+        )
+        return self._monitor_event_from_row(row) if row else None
+
+    def list_monitor_events(
+        self,
+        *,
+        since_utc: datetime | None = None,
+        limit: int | None = None,
+    ) -> list[MonitorEvent]:
+        clauses: list[str] = ["1=1"]
+        params: list[Any] = []
+        if since_utc:
+            clauses.append("first_seen_at_utc >= ?")
+            params.append(_to_utc_iso(since_utc))
+        query = f"""
+            SELECT
+                id,
+                source_key,
+                source_kind,
+                title,
+                url,
+                published_at_utc,
+                first_seen_at_utc,
+                content_hint,
+                event_hash,
+                entities_json,
+                symbols_json,
+                tags_json,
+                trust_tier,
+                raw_metadata_json
+            FROM monitor_events
+            WHERE {" AND ".join(clauses)}
+            ORDER BY first_seen_at_utc ASC, id ASC
+        """
+        if limit:
+            query += f" LIMIT {int(limit)}"
+        return [self._monitor_event_from_row(row) for row in self._query_all(query, params)]
+
+    def record_monitor_signal(self, signal: MonitorSignal) -> MonitorSignal:
+        self._execute(
+            """
+            INSERT INTO monitor_signals (
+                event_id,
+                level,
+                score,
+                reason,
+                entities_json,
+                symbols_json,
+                tags_json,
+                created_at_utc,
+                dispatched_at_utc,
+                suppressed_reason
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                signal.event_id,
+                _signal_level_value(signal.level),
+                signal.score,
+                signal.reason,
+                json.dumps(list(signal.entities)),
+                json.dumps(list(signal.symbols)),
+                json.dumps(list(signal.tags)),
+                _to_utc_iso(signal.created_at),
+                _to_utc_iso(signal.dispatched_at) if signal.dispatched_at else None,
+                signal.suppressed_reason,
+            ),
+        )
+        latest = self._query_one("SELECT id FROM monitor_signals ORDER BY id DESC LIMIT 1")
+        if latest and latest.get("id") is not None:
+            signal.id = int(latest["id"])
+        return signal
+
+    def list_monitor_signals(
+        self,
+        *,
+        level: SignalLevel | None = None,
+        since_utc: datetime | None = None,
+        limit: int | None = None,
+    ) -> list[MonitorSignal]:
+        clauses: list[str] = ["1=1"]
+        params: list[Any] = []
+        if level:
+            clauses.append("level = ?")
+            params.append(_signal_level_value(level))
+        if since_utc:
+            clauses.append("created_at_utc >= ?")
+            params.append(_to_utc_iso(since_utc))
+        query = f"""
+            SELECT
+                id,
+                event_id,
+                level,
+                score,
+                reason,
+                entities_json,
+                symbols_json,
+                tags_json,
+                created_at_utc,
+                dispatched_at_utc,
+                suppressed_reason
+            FROM monitor_signals
+            WHERE {" AND ".join(clauses)}
+            ORDER BY created_at_utc ASC, id ASC
+        """
+        if limit:
+            query += f" LIMIT {int(limit)}"
+        return [self._monitor_signal_from_row(row) for row in self._query_all(query, params)]
+
+    def mark_monitor_signal_dispatched(self, signal_id: int, dispatched_at: datetime) -> None:
+        self._execute(
+            "UPDATE monitor_signals SET dispatched_at_utc = ? WHERE id = ?",
+            (_to_utc_iso(dispatched_at), signal_id),
+        )
+
     def _ensure_parent_dir(self) -> None:
         if self.url:
             return
@@ -426,6 +603,43 @@ class StateStore:
                 published_at_utc TEXT
             )
             """,
+            """
+            CREATE TABLE IF NOT EXISTS monitor_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                source_key TEXT NOT NULL,
+                source_kind TEXT NOT NULL,
+                title TEXT NOT NULL,
+                url TEXT NOT NULL,
+                published_at_utc TEXT,
+                first_seen_at_utc TEXT NOT NULL,
+                content_hint TEXT NOT NULL,
+                event_hash TEXT NOT NULL UNIQUE,
+                entities_json TEXT NOT NULL DEFAULT '[]',
+                symbols_json TEXT NOT NULL DEFAULT '[]',
+                tags_json TEXT NOT NULL DEFAULT '[]',
+                trust_tier INTEGER NOT NULL,
+                raw_metadata_json TEXT NOT NULL DEFAULT '{}'
+            )
+            """,
+            "CREATE INDEX IF NOT EXISTS idx_monitor_events_seen ON monitor_events (first_seen_at_utc)",
+            "CREATE INDEX IF NOT EXISTS idx_monitor_events_source ON monitor_events (source_key, first_seen_at_utc)",
+            """
+            CREATE TABLE IF NOT EXISTS monitor_signals (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                event_id INTEGER NOT NULL,
+                level TEXT NOT NULL,
+                score INTEGER NOT NULL,
+                reason TEXT NOT NULL,
+                entities_json TEXT NOT NULL DEFAULT '[]',
+                symbols_json TEXT NOT NULL DEFAULT '[]',
+                tags_json TEXT NOT NULL DEFAULT '[]',
+                created_at_utc TEXT NOT NULL,
+                dispatched_at_utc TEXT,
+                suppressed_reason TEXT,
+                FOREIGN KEY(event_id) REFERENCES monitor_events(id)
+            )
+            """,
+            "CREATE INDEX IF NOT EXISTS idx_monitor_signals_level_created ON monitor_signals (level, created_at_utc)",
         ]
         for statement in schema:
             self._execute(statement)
@@ -470,6 +684,43 @@ class StateStore:
             else None,
         )
 
+    def _monitor_event_from_row(self, row: dict[str, Any]) -> MonitorEvent:
+        return MonitorEvent(
+            id=int(row["id"]) if row["id"] is not None else None,
+            source_key=row["source_key"],
+            source_kind=row["source_kind"],
+            title=row["title"],
+            url=row["url"],
+            published_at=_from_utc_iso(row["published_at_utc"], timezone.utc)
+            if row["published_at_utc"]
+            else None,
+            first_seen_at=_from_utc_iso(row["first_seen_at_utc"], timezone.utc),
+            content_hint=row["content_hint"],
+            event_hash=row["event_hash"],
+            entities=tuple(json.loads(row["entities_json"] or "[]")),
+            symbols=tuple(json.loads(row["symbols_json"] or "[]")),
+            tags=tuple(json.loads(row["tags_json"] or "[]")),
+            trust_tier=int(row["trust_tier"]),
+            raw_metadata=json.loads(row["raw_metadata_json"] or "{}"),
+        )
+
+    def _monitor_signal_from_row(self, row: dict[str, Any]) -> MonitorSignal:
+        return MonitorSignal(
+            id=int(row["id"]) if row["id"] is not None else None,
+            event_id=int(row["event_id"]),
+            level=SignalLevel(row["level"]),
+            score=int(row["score"]),
+            reason=row["reason"],
+            entities=tuple(json.loads(row["entities_json"] or "[]")),
+            symbols=tuple(json.loads(row["symbols_json"] or "[]")),
+            tags=tuple(json.loads(row["tags_json"] or "[]")),
+            created_at=_from_utc_iso(row["created_at_utc"], timezone.utc),
+            dispatched_at=_from_utc_iso(row["dispatched_at_utc"], timezone.utc)
+            if row["dispatched_at_utc"]
+            else None,
+            suppressed_reason=row["suppressed_reason"],
+        )
+
 
 def create_state_store(settings: RuntimeSettings) -> StateStore:
     return StateStore(
@@ -491,3 +742,9 @@ def _to_utc_iso(value: datetime) -> str:
 
 def _from_utc_iso(value: str, timezone_name: ZoneInfo) -> datetime:
     return datetime.fromisoformat(value).astimezone(timezone_name)
+
+
+def _signal_level_value(level: SignalLevel | str) -> str:
+    if isinstance(level, SignalLevel):
+        return level.value
+    return str(level)
