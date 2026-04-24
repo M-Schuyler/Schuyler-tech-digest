@@ -38,8 +38,14 @@ def test_workflows_use_node24_capable_action_versions() -> None:
 
     for workflow in (intraday, close, daily):
         assert "uses: actions/checkout@v6" in workflow
+
+    for workflow in (intraday, close):
         assert "uses: actions/setup-python@v6" in workflow
 
+    assert "runs-on: [self-hosted, macOS, daily-news]" in daily
+    assert "uses: actions/setup-python@v6" not in daily
+    assert "PYTHON_BIN: /opt/homebrew/bin/python3.12" in daily
+    assert "name: Prepare Python" in daily
     assert "uses: actions/upload-artifact@v7" in daily
 
 
