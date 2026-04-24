@@ -83,9 +83,9 @@ def _overall_takeaway(items: list[BriefingItem]) -> str:
     counts = Counter(item.category for item in items)
     parts: list[str] = []
     takeaway_map = {
-        "AI": "AI 进展密集，模型与应用同步推进",
+        "AI": "AI 进展密集，重点看商业落点和成本承担方",
         "Big Tech": "科技大厂动作频繁，生态变化值得跟踪",
-        "Chips": "芯片与算力供应链持续升温",
+        "Chips": "芯片与算力供应链出现分化，先看价格确认",
         "Startups": "投融资保持活跃，创业赛道继续分化",
         "Robotics": "机器人与自动化落地继续提速",
     }

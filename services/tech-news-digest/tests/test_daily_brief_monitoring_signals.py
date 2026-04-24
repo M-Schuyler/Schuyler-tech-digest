@@ -23,3 +23,18 @@ def test_format_monitoring_signal_line_keeps_reason_symbols_and_entities() -> No
     assert "MSFT / NVDA" in line
     assert "openai" in line
     assert "Official source" in line
+
+
+def test_format_monitoring_signal_line_drops_unmapped_unnamed_noise() -> None:
+    signal = MonitorSignal(
+        event_id=2,
+        level=SignalLevel.DIGEST_CANDIDATE,
+        score=65,
+        reason="Official source + focus tags ai.",
+        entities=(),
+        symbols=(),
+        tags=("ai", "official"),
+        created_at=datetime(2026, 4, 24, tzinfo=timezone.utc),
+    )
+
+    assert _format_monitoring_signal_line(signal) is None

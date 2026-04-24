@@ -22,7 +22,7 @@ class CrossCorrelator:
                 lines.append(f"昨夜最先响应主线的是 {leaders}，这比泛泛的新闻热度更值得信。")
             if close_summary.weakest_assets:
                 laggards = " / ".join(close_summary.weakest_assets[:2])
-                lines.append(f"相反，{laggards} 还没跟上，说明资金并不是无差别地追科技。")
+                lines.append(f"{laggards} 偏弱是约束条件：任何新闻结论都要先解释为什么它没有被买入。")
         else:
             lines.append("前一交易日还没有现成的收盘结案数据，今天先用新闻主线去定义观察重点。")
 
@@ -31,7 +31,10 @@ class CrossCorrelator:
 
         if watchlist:
             lead = watchlist[0]
-            lines.append(f"下一交易日优先盯 {lead.symbol}，因为{lead.reason}。")
+            if close_summary and lead.symbol in close_summary.weakest_assets:
+                lines.append(f"下一交易日优先盯 {lead.symbol}，但它是风险验证点，不是追涨标的：{lead.reason}。")
+            else:
+                lines.append(f"下一交易日优先盯 {lead.symbol}，因为{lead.reason}。")
 
         bullets = [f"• {item.symbol}：{item.reason}" for item in watchlist[:3]]
         return "\n".join([*lines, *bullets])

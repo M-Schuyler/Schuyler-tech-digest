@@ -49,6 +49,13 @@ def test_low_trust_unmapped_event_is_archive_only() -> None:
     assert signal.score < 50
 
 
+def test_official_focus_tag_without_entity_or_symbol_stays_archive_only() -> None:
+    signal = classify_signal(event(trust_tier=1, entities=(), symbols=(), tags=("ai", "official")))
+
+    assert signal.level is SignalLevel.ARCHIVE_ONLY
+    assert signal.score < 50
+
+
 def test_mapped_non_official_event_becomes_digest_candidate() -> None:
     signal = classify_signal(
         event(

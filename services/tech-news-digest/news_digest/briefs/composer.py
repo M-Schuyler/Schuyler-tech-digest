@@ -44,7 +44,7 @@ class DailyBriefComposer:
         selected, _, _ = self.pipeline.collect_selected(report_date=brief_date)
         items = [item for item, _ in selected]
 
-        top_three = self.topic_ranker.rank(items)
+        top_three = self.topic_ranker.rank(items, close_summary=close_summary)
         watchlist = self.watchlist_builder.build(items, close_summary)
         ai_section = self._build_ai_section(items)
         tech_section = self._build_tech_section(items)
@@ -171,7 +171,14 @@ class DailyBriefComposer:
             limit=8,
         )
         ranked = sorted(signals, key=lambda signal: signal.score, reverse=True)
-        return [_format_monitoring_signal_line(signal) for signal in ranked[:3]]
+        lines: list[str] = []
+        for signal in ranked:
+            line = _format_monitoring_signal_line(signal)
+            if line:
+                lines.append(line)
+            if len(lines) == 3:
+                break
+        return lines
 
 
 def _primary_summary(item: BriefingItem) -> str:
@@ -182,7 +189,9 @@ def _primary_summary(item: BriefingItem) -> str:
     return "暂无摘要。"
 
 
-def _format_monitoring_signal_line(signal: MonitorSignal) -> str:
-    symbols = " / ".join(signal.symbols) or "无映射标的"
-    entities = " / ".join(signal.entities) or "未命名实体"
+def _format_monitoring_signal_line(signal: MonitorSignal) -> str | None:
+    if not signal.symbols and not signal.entities:
+        return None
+    symbols = " / ".join(signal.symbols) or "未映射"
+    entities = " / ".join(signal.entities) or "未命名"
     return f"• {symbols}：{entities} - {signal.reason}"

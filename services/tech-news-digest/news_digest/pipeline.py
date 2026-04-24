@@ -16,7 +16,7 @@ from .summarizer import NewsSummarizer
 logger = logging.getLogger(__name__)
 
 TITLE_INCLUDE_PATTERNS = [
-    r"\b(ai|llm|model|agent)\b",
+    r"\b(ai|llm|model|agent|gpt|chatgpt|claude|gemini|deepseek)\b",
     r"\b(robot|robotics|humanoid|autonomous|drone)\b",
     r"\b(chip|semiconductor|gpu|cpu|foundry|tsmc|nvidia|amd|intel)\b",
     r"\b(openai|anthropic|google|microsoft|amazon|meta|apple|tesla|bytedance)\b",
@@ -107,7 +107,7 @@ class NewsPipeline:
 
         candidates.sort(
             key=lambda x: (
-                x[0].importance_score,
+                x[0].importance_score + _source_weight(x[1]) + _recentness_weight(x[1]),
                 _published_sort_key(x[1].published_at),
             ),
             reverse=True,
@@ -200,3 +200,41 @@ def _published_sort_key(published_at: datetime | None) -> float:
     else:
         normalized = published_at.astimezone(timezone.utc)
     return normalized.timestamp()
+
+
+def _source_weight(item: ArticleRaw | ArticleSeed) -> int:
+    source = (item.source or "").lower()
+    url = (item.url or "").lower()
+    if "openai" in source or "openai.com" in url:
+        return 18
+    if "hacker news" in source or "hnrss.org" in url:
+        return 8
+    return 0
+
+
+def _recentness_weight(item: ArticleRaw | ArticleSeed, *, now: datetime | None = None) -> int:
+    published_at = item.published_at
+    if not published_at:
+        return 0
+
+    reference = now or datetime.now(tz=timezone.utc)
+    if reference.tzinfo is None:
+        reference = reference.replace(tzinfo=timezone.utc)
+    else:
+        reference = reference.astimezone(timezone.utc)
+
+    if published_at.tzinfo is None:
+        normalized = published_at.replace(tzinfo=timezone.utc)
+    else:
+        normalized = published_at.astimezone(timezone.utc)
+
+    age_hours = (reference - normalized).total_seconds() / 3600
+    if age_hours < 0:
+        return 20
+    if age_hours <= 12:
+        return 24
+    if age_hours <= 24:
+        return 18
+    if age_hours <= 72:
+        return 8
+    return 0

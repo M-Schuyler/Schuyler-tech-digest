@@ -35,6 +35,9 @@ def classify_signal(event: MonitorEvent) -> MonitorSignal:
         score += 10
         reasons.append(f"focus tags {'/'.join(focus_tags)}")
 
+    if not event.entities and not event.symbols:
+        score = min(score, 45)
+
     score = min(score, 100)
     if score >= 85:
         level = SignalLevel.INTERRUPT

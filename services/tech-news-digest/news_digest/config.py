@@ -80,6 +80,7 @@ MARKET_SYMBOLS: dict[str, SymbolProfile] = {
     "META": SymbolProfile("META", "META", "tech_stock", "Meta", 7),
     "MSFT": SymbolProfile("MSFT", "MSFT", "tech_stock", "Microsoft", 9),
     "GOOGL": SymbolProfile("GOOGL", "GOOGL", "tech_stock", "Google", 8),
+    "AMZN": SymbolProfile("AMZN", "AMZN", "tech_stock", "Amazon", 8),
     "AAPL": SymbolProfile("AAPL", "AAPL", "tech_stock", "Apple", 8),
     "BTC": SymbolProfile("BTC", "BTC-USD", "crypto", "Bitcoin", 10),
     "ETH": SymbolProfile("ETH", "ETH-USD", "crypto", "Ethereum", 8),
@@ -91,6 +92,8 @@ CRYPTO_SYMBOLS = tuple(symbol for symbol, profile in MARKET_SYMBOLS.items() if p
 
 DEFAULT_SETTINGS = Settings(
     rss_sources={
+        "OpenAI News": "https://openai.com/news/rss.xml",
+        "Hacker News Frontpage": "https://hnrss.org/frontpage",
         "TechCrunch": "https://techcrunch.com/feed/",
         "The Verge": "https://www.theverge.com/rss/index.xml",
         "Wired": "https://www.wired.com/feed/rss",
