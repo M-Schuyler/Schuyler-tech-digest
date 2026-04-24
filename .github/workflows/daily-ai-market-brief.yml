@@ -18,7 +18,7 @@ jobs:
       GEMINI_MODEL: 3.1-flash-preview
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY || 'local-dummy-key' }}
       OPENAI_BASE_URL: ${{ vars.OPENAI_BASE_URL || 'http://127.0.0.1:8317/v1' }}
-      OPENAI_MODEL: gpt-4o-mini
+      OPENAI_MODEL: gpt-5.4-mini
       TELEGRAM_BOT_TOKEN_MAIN: ${{ secrets.TELEGRAM_BOT_TOKEN_MAIN }}
       TELEGRAM_CHAT_ID_MAIN: ${{ secrets.TELEGRAM_CHAT_ID_MAIN }}
       STATE_DB_URL: ${{ secrets.STATE_DB_URL }}
