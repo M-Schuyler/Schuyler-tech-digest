@@ -11,12 +11,13 @@ on:
 
 jobs:
   run-daily-brief:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, macOS, daily-news]
     env:
       TZ: Asia/Shanghai
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
       GEMINI_MODEL: 3.1-flash-preview
-      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY || 'local-dummy-key' }}
+      OPENAI_BASE_URL: ${{ vars.OPENAI_BASE_URL || 'http://127.0.0.1:8317/v1' }}
       OPENAI_MODEL: gpt-4o-mini
       TELEGRAM_BOT_TOKEN_MAIN: ${{ secrets.TELEGRAM_BOT_TOKEN_MAIN }}
       TELEGRAM_CHAT_ID_MAIN: ${{ secrets.TELEGRAM_CHAT_ID_MAIN }}
