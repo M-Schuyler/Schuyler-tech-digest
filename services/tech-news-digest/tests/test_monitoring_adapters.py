@@ -58,3 +58,28 @@ def test_rss_adapter_converts_feed_entries_to_raw_items(monkeypatch) -> None:
     assert items[0].source_key == "openai-news"
     assert items[0].title == "OpenAI launches workplace agents"
     assert items[0].content_hint == "Agent controls for enterprise workflows"
+
+
+def test_rss_adapter_caps_items_per_source_to_avoid_backfill_flood(monkeypatch) -> None:
+    class Feed:
+        entries = [
+            {
+                "title": f"OpenAI update {idx}",
+                "link": f"https://openai.com/news/{idx}",
+                "summary": "Agent controls",
+            }
+            for idx in range(25)
+        ]
+
+    monkeypatch.delenv("MONITORING_MAX_ITEMS_PER_SOURCE", raising=False)
+    monkeypatch.setattr("feedparser.parse", lambda _url: Feed())
+    source = SourceSpec(
+        key="openai-news",
+        kind=SourceKind.RSS,
+        url="https://openai.com/news/rss.xml",
+        trust_tier=1,
+    )
+
+    items = RSSSourceAdapter(source).fetch()
+
+    assert len(items) == 20
