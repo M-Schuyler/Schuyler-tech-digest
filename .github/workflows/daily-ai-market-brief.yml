@@ -28,23 +28,25 @@ jobs:
       MAX_ARTICLES_PER_SOURCE: "10"
       MAX_BRIEFING_ITEMS: "10"
       REQUEST_TIMEOUT: "20"
+      PYTHON_BIN: /opt/homebrew/bin/python3.12
 
     steps:
       - name: Checkout
         uses: actions/checkout@v6
 
-      - name: Setup Python
-        uses: actions/setup-python@v6
-        with:
-          python-version: "3.11"
+      - name: Prepare Python
+        working-directory: services/tech-news-digest
+        run: |
+          "$PYTHON_BIN" -m venv .venv
+          .venv/bin/python -m pip install --upgrade pip
 
       - name: Install dependencies
         working-directory: services/tech-news-digest
-        run: pip install -r requirements.txt
+        run: .venv/bin/python -m pip install -r requirements.txt
 
       - name: Run daily brief
         working-directory: services/tech-news-digest
-        run: python main.py daily-brief
+        run: .venv/bin/python main.py daily-brief
 
       - name: Upload daily assets
         if: always()
