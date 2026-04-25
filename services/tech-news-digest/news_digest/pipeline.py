@@ -6,6 +6,8 @@ import re
 from datetime import date, datetime, timezone
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
+from rapidfuzz import fuzz
+
 from .config import DEFAULT_SETTINGS, Settings
 from .extractor import ArticleExtractor
 from .fetchers import RSSFetcher
@@ -96,6 +98,9 @@ class NewsPipeline:
                         summary_zh=assessment.summary_zh,
                         url=raw.url,
                         importance_score=assessment.importance_score,
+                        story_key=assessment.story_key,
+                        entities=assessment.entities,
+                        symbols=assessment.symbols,
                     ),
                     raw,
                 )
@@ -105,6 +110,7 @@ class NewsPipeline:
                 logger.info("Reached candidate pool target (%s)", self.target_candidate_pool)
                 break
 
+        candidates = _dedupe_story_candidates(candidates)
         candidates.sort(
             key=lambda x: (
                 x[0].importance_score + _source_weight(x[1]) + _recentness_weight(x[1]),
@@ -150,6 +156,109 @@ def _dedupe_seeds(seeds: list[ArticleSeed]) -> list[ArticleSeed]:
         )
 
     return unique
+
+
+def _dedupe_story_candidates(
+    candidates: list[tuple[BriefingItem, ArticleRaw]],
+) -> list[tuple[BriefingItem, ArticleRaw]]:
+    unique: list[tuple[BriefingItem, ArticleRaw]] = []
+
+    for candidate in candidates:
+        match_idx = next(
+            (
+                idx
+                for idx, existing in enumerate(unique)
+                if _is_same_story(candidate, existing)
+            ),
+            None,
+        )
+        if match_idx is None:
+            unique.append(candidate)
+            continue
+
+        if _candidate_rank_value(candidate) > _candidate_rank_value(unique[match_idx]):
+            unique[match_idx] = candidate
+
+    return unique
+
+
+def _is_same_story(
+    left: tuple[BriefingItem, ArticleRaw],
+    right: tuple[BriefingItem, ArticleRaw],
+) -> bool:
+    left_item, _left_raw = left
+    right_item, _right_raw = right
+
+    if left_item.story_key and right_item.story_key and left_item.story_key == right_item.story_key:
+        return True
+
+    left_models = _model_tokens(left_item)
+    right_models = _model_tokens(right_item)
+    if left_models and right_models and left_models != right_models:
+        return False
+
+    left_money = _money_tokens(left_item)
+    right_money = _money_tokens(right_item)
+    if left_money and right_money and left_money != right_money:
+        return False
+
+    left_entities = set(left_item.entities) or _entity_tokens(left_item)
+    right_entities = set(right_item.entities) or _entity_tokens(right_item)
+    if left_entities and right_entities and left_entities.isdisjoint(right_entities):
+        return False
+
+    similarity = fuzz.token_set_ratio(_story_text(left_item), _story_text(right_item))
+    if similarity >= 90:
+        return True
+
+    has_shared_entities = bool(left_entities and right_entities and not left_entities.isdisjoint(right_entities))
+    has_shared_event_tokens = bool((left_money and left_money == right_money) or (left_models and left_models == right_models))
+    return similarity >= 84 and has_shared_entities and has_shared_event_tokens
+
+
+def _candidate_rank_value(candidate: tuple[BriefingItem, ArticleRaw]) -> tuple[int, float]:
+    item, raw = candidate
+    return (
+        item.importance_score + _source_weight(raw) + _recentness_weight(raw),
+        _published_sort_key(raw.published_at),
+    )
+
+
+def _story_text(item: BriefingItem) -> str:
+    return " ".join([item.title, item.story_key, *(item.summary_en or []), *(item.summary_zh or [])]).lower()
+
+
+def _model_tokens(item: BriefingItem) -> set[str]:
+    text = _story_text(item)
+    return set(re.findall(r"\b(?:gpt|claude|gemini|deepseek|llama|mistral)[-\s]?\d+(?:\.\d+)?\b", text))
+
+
+def _money_tokens(item: BriefingItem) -> set[str]:
+    text = _story_text(item)
+    tokens = set()
+    for amount, unit in re.findall(r"\$?\b(\d+(?:\.\d+)?)\s?(billion|million|bn|m|b)\b", text):
+        normalized_unit = "b" if unit in {"billion", "bn", "b"} else "m"
+        tokens.add(f"{amount}{normalized_unit}")
+    if "billions" in text:
+        tokens.add("billions")
+    return tokens
+
+
+def _entity_tokens(item: BriefingItem) -> set[str]:
+    text = _story_text(item)
+    known_entities = {
+        "openai",
+        "anthropic",
+        "google",
+        "alphabet",
+        "amazon",
+        "microsoft",
+        "meta",
+        "nvidia",
+        "apple",
+        "deepmind",
+    }
+    return {entity for entity in known_entities if re.search(rf"\b{re.escape(entity)}\b", text)}
 
 
 def _canonicalize_url(url: str) -> str:

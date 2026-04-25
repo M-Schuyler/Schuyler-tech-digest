@@ -402,6 +402,31 @@ class StateStore:
         )
         return self._monitor_event_from_row(row) if row else None
 
+    def get_monitor_event(self, event_id: int) -> MonitorEvent | None:
+        row = self._query_one(
+            """
+            SELECT
+                id,
+                source_key,
+                source_kind,
+                title,
+                url,
+                published_at_utc,
+                first_seen_at_utc,
+                content_hint,
+                event_hash,
+                entities_json,
+                symbols_json,
+                tags_json,
+                trust_tier,
+                raw_metadata_json
+            FROM monitor_events
+            WHERE id = ?
+            """,
+            (event_id,),
+        )
+        return self._monitor_event_from_row(row) if row else None
+
     def list_monitor_events(
         self,
         *,

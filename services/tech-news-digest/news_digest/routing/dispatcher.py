@@ -5,6 +5,7 @@ from pathlib import Path
 from ..config import RuntimeSettings
 from ..models import AlertEvent, CloseSummary, DailyBrief
 from ..monitoring.models import MonitorEvent, MonitorSignal
+from ..public_text import sanitize_public_section
 from .telegram_client import TelegramBotClient, split_text
 
 
@@ -33,14 +34,15 @@ class TelegramDispatcher:
 
 
 def format_daily_brief(brief: DailyBrief) -> str:
-    top = "\n".join(f"{idx}. {line}" for idx, line in enumerate(brief.top_three, start=1))
+    top_lines = [line for line in (sanitize_public_section(line) for line in brief.top_three) if line]
+    top = "\n".join(f"{idx}. {line}" for idx, line in enumerate(top_lines, start=1))
     return "\n\n".join(
         [
             "🧭【今天只看这 3 件事】\n" + top,
-            "🤖【AI 主线】\n" + brief.ai_section,
-            "🏢【科技与公司】\n" + brief.tech_section,
-            "📈【市场与价格】\n" + brief.market_section,
-            "🔗【交叉情报】\n" + brief.cross_section,
+            "🤖【AI 主线】\n" + sanitize_public_section(brief.ai_section),
+            "🏢【科技与公司】\n" + sanitize_public_section(brief.tech_section),
+            "📈【市场与价格】\n" + sanitize_public_section(brief.market_section),
+            "🔗【交叉情报】\n" + sanitize_public_section(brief.cross_section),
         ]
     )
 
@@ -60,12 +62,23 @@ def format_close_summary(summary: CloseSummary) -> str:
 
 def format_monitor_signal(signal: MonitorSignal, event: MonitorEvent) -> str:
     symbols = " / ".join(signal.symbols) or "无映射标的"
+    title = sanitize_public_section(event.title) or "新情报信号"
     return "\n".join(
         [
             "🛰️【实时情报信号】",
-            f"{event.title}",
+            f"{title}",
             f"标的：{symbols}",
-            f"理由：{signal.reason}",
+            f"理由：{_public_monitor_signal_reason(signal, event)}",
             f"来源：{event.url}",
         ]
     )
+
+
+def _public_monitor_signal_reason(signal: MonitorSignal, event: MonitorEvent) -> str:
+    if signal.symbols:
+        return "相关标的已进入观察名单，先看价格是否确认消息强度"
+    if signal.entities:
+        return "关注实体出现新动态，等待后续新闻和市场反应确认"
+    if event.content_hint:
+        return "新事件进入候选池，等待更多证据确认"
+    return "候选信号需要继续观察"

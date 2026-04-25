@@ -10,8 +10,9 @@ from ..intelligence.topic_ranker import TopicRanker
 from ..intelligence.watchlist_builder import WatchlistBuilder
 from ..market.provider import MarketProvider
 from ..models import BriefRecord, CloseSummary, DailyBrief
-from ..monitoring.models import MonitorSignal, SignalLevel
+from ..monitoring.models import MonitorEvent, MonitorSignal, SignalLevel
 from ..pipeline import NewsPipeline
+from ..public_text import sanitize_public_section
 from ..report import BriefingItem
 from ..scheduling.calendar import NYSECalendar
 from ..state.store import StateStore
@@ -173,7 +174,8 @@ class DailyBriefComposer:
         ranked = sorted(signals, key=lambda signal: signal.score, reverse=True)
         lines: list[str] = []
         for signal in ranked:
-            line = _format_monitoring_signal_line(signal)
+            event = self.state_store.get_monitor_event(signal.event_id)
+            line = _format_monitoring_signal_line(signal, event)
             if line:
                 lines.append(line)
             if len(lines) == 3:
@@ -189,9 +191,23 @@ def _primary_summary(item: BriefingItem) -> str:
     return "暂无摘要。"
 
 
-def _format_monitoring_signal_line(signal: MonitorSignal) -> str | None:
+def _format_monitoring_signal_line(signal: MonitorSignal, event: MonitorEvent | None = None) -> str | None:
     if not signal.symbols and not signal.entities:
         return None
     symbols = " / ".join(signal.symbols) or "未映射"
     entities = " / ".join(signal.entities) or "未命名"
-    return f"• {symbols}：{entities} - {signal.reason}"
+    if event:
+        title = sanitize_public_section(event.title) or entities
+        reason = _public_monitoring_reason(signal, event)
+        return f"• {symbols}：{entities} - {title}；{reason}"
+    return f"• {symbols}：{entities} - {_public_monitoring_reason(signal, event)}"
+
+
+def _public_monitoring_reason(signal: MonitorSignal, event: MonitorEvent | None = None) -> str:
+    if signal.symbols:
+        return "相关标的已进入观察名单，今天看价格是否确认"
+    if signal.entities:
+        return "相关实体出现新动态，先看是否扩散到主线资产"
+    if event and event.title:
+        return "新事件进入候选池，等待后续信号确认"
+    return "候选信号等待进一步确认"

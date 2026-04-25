@@ -53,6 +53,9 @@ class ArticleAssessment:
     summary_en: list[str]
     summary_zh: list[str]
     rejection_reason: str = ""
+    story_key: str = ""
+    entities: tuple[str, ...] = ()
+    symbols: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)

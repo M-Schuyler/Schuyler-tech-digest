@@ -16,6 +16,9 @@ class BriefingItem:
     summary_zh: list[str]
     url: str
     importance_score: int
+    story_key: str = ""
+    entities: tuple[str, ...] = ()
+    symbols: tuple[str, ...] = ()
 
 
 class MarkdownReportWriter:

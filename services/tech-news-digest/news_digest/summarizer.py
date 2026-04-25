@@ -14,6 +14,54 @@ from .models import ArticleAssessment, ArticleRaw
 logger = logging.getLogger(__name__)
 
 ALLOWED_CATEGORIES = {"AI", "Robotics", "Chips", "Big Tech", "Startups"}
+SCHEMA_CATEGORIES = sorted([*ALLOWED_CATEGORIES, "Other"])
+
+ARTICLE_ASSESSMENT_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": [
+        "keep",
+        "category",
+        "importance_score",
+        "title",
+        "summary_en",
+        "summary_zh",
+        "rejection_reason",
+        "story_key",
+        "entities",
+        "symbols",
+    ],
+    "properties": {
+        "keep": {"type": "boolean"},
+        "category": {"type": "string", "enum": SCHEMA_CATEGORIES},
+        "importance_score": {"type": "integer", "minimum": 0, "maximum": 100},
+        "title": {"type": "string", "minLength": 1, "maxLength": 120},
+        "summary_en": {
+            "type": "array",
+            "minItems": 2,
+            "maxItems": 2,
+            "items": {"type": "string", "minLength": 20, "maxLength": 220},
+        },
+        "summary_zh": {
+            "type": "array",
+            "minItems": 2,
+            "maxItems": 2,
+            "items": {"type": "string", "minLength": 8, "maxLength": 160},
+        },
+        "rejection_reason": {"type": "string", "maxLength": 160},
+        "story_key": {"type": "string", "minLength": 1, "maxLength": 90},
+        "entities": {
+            "type": "array",
+            "maxItems": 8,
+            "items": {"type": "string", "minLength": 1, "maxLength": 40},
+        },
+        "symbols": {
+            "type": "array",
+            "maxItems": 8,
+            "items": {"type": "string", "minLength": 1, "maxLength": 12},
+        },
+    },
+}
 
 EXCLUDED_TITLE_PATTERNS = [
     r"\breview\b",
@@ -61,6 +109,22 @@ CATEGORY_RULES: list[tuple[str, list[str]]] = [
     ("Startups", ["startup", "funding", "raised", "series a", "series b", "series c", "valuation", "venture"]),
     ("AI", ["ai", "llm", "language model", "foundation model", "openai", "anthropic", "chatbot", "agent"]),
 ]
+
+INTERNAL_METADATA_PATTERNS = [
+    "focus tags",
+    "tier 1 source",
+    "tier 2 source",
+    "tier 3 source",
+    "tier source",
+    "mapped symbols",
+    "official source",
+    "watched entity",
+    "source signal",
+]
+
+
+class AssessmentValidationError(ValueError):
+    pass
 
 
 class NewsSummarizer:
@@ -121,40 +185,52 @@ class NewsSummarizer:
         return normalized
 
     def _assess_with_gemini(self, article: ArticleRaw) -> ArticleAssessment:
-        prompt = _editor_prompt(article)
-        response = requests.post(
-            f"https://generativelanguage.googleapis.com/v1beta/models/{self._gemini_model}:generateContent",
-            params={"key": self._gemini_api_key},
-            json={
-                "contents": [{"parts": [{"text": prompt}]}],
-                "generationConfig": {
-                    "temperature": 0.15,
-                    "responseMimeType": "application/json",
+        validation_error = ""
+        for _attempt in range(2):
+            prompt = _editor_prompt(article, validation_error=validation_error)
+            response = requests.post(
+                f"https://generativelanguage.googleapis.com/v1beta/models/{self._gemini_model}:generateContent",
+                params={"key": self._gemini_api_key},
+                json={
+                    "contents": [{"parts": [{"text": prompt}]}],
+                    "generationConfig": {
+                        "temperature": 0.15,
+                        "responseMimeType": "application/json",
+                    },
                 },
-            },
-            timeout=45,
-        )
-        response.raise_for_status()
-        payload = response.json()
-        raw_text = (
-            ((payload.get("candidates") or [{}])[0].get("content") or {}).get("parts") or [{}]
-        )[0].get("text", "{}")
-        data = _parse_json_object(raw_text)
-        return _assessment_from_dict(data, article.title)
+                timeout=45,
+            )
+            response.raise_for_status()
+            payload = response.json()
+            raw_text = (
+                ((payload.get("candidates") or [{}])[0].get("content") or {}).get("parts") or [{}]
+            )[0].get("text", "{}")
+            data = _parse_json_object(raw_text)
+            try:
+                return _validated_assessment_from_dict(data, article)
+            except AssessmentValidationError as exc:
+                validation_error = str(exc)
+        raise AssessmentValidationError(validation_error or "Gemini output failed validation")
 
     def _assess_with_openai(self, article: ArticleRaw) -> ArticleAssessment:
-        response = self._openai_client.chat.completions.create(
-            model=self.settings.openai_model,
-            temperature=0.15,
-            response_format={"type": "json_object"},
-            messages=[
-                {"role": "system", "content": _editor_system_prompt()},
-                {"role": "user", "content": _editor_user_prompt(article)},
-            ],
-        )
-        raw_content = response.choices[0].message.content or "{}"
-        data = _parse_json_object(raw_content)
-        return _assessment_from_dict(data, article.title)
+        validation_error = ""
+        for _attempt in range(2):
+            response = self._openai_client.chat.completions.create(
+                model=self.settings.openai_model,
+                temperature=0.15,
+                response_format=_openai_json_schema_response_format(),
+                messages=[
+                    {"role": "system", "content": _editor_system_prompt()},
+                    {"role": "user", "content": _editor_user_prompt(article, validation_error=validation_error)},
+                ],
+            )
+            raw_content = response.choices[0].message.content or "{}"
+            data = _parse_json_object(raw_content)
+            try:
+                return _validated_assessment_from_dict(data, article)
+            except AssessmentValidationError as exc:
+                validation_error = str(exc)
+        raise AssessmentValidationError(validation_error or "OpenAI output failed validation")
 
     def _assess_with_heuristic(self, article: ArticleRaw) -> ArticleAssessment:
         text = f"{article.title}\n{article.content}".lower()
@@ -207,6 +283,9 @@ class NewsSummarizer:
             title=article.title,
             summary_en=summary_en[:2],
             summary_zh=summary_zh[:2],
+            story_key=_build_story_key(article.title),
+            entities=_extract_entities(f"{article.title}\n{article.content}"),
+            symbols=_extract_symbols(f"{article.title}\n{article.content}"),
         )
 
     def _normalize_assessment(self, article: ArticleRaw, assessment: ArticleAssessment) -> ArticleAssessment:
@@ -244,6 +323,9 @@ class NewsSummarizer:
             summary_en=summary_en[:2],
             summary_zh=summary_zh[:2],
             rejection_reason=assessment.rejection_reason,
+            story_key=assessment.story_key or _build_story_key(title),
+            entities=assessment.entities or _extract_entities(f"{title}\n{article.content}"),
+            symbols=assessment.symbols or _extract_symbols(f"{title}\n{article.content}"),
         )
 
     def _translate_free(self, text: str) -> str | None:
@@ -313,19 +395,28 @@ class NewsSummarizer:
 def _editor_system_prompt() -> str:
     return (
         "You are an expert tech editor for an executive daily briefing. "
-        "Filter and summarize only high-impact technology news."
+        "Filter and summarize only high-impact technology news. "
+        "Never expose internal scoring metadata such as focus tags, source tiers, or mapped symbols."
     )
 
 
-def _editor_user_prompt(article: ArticleRaw) -> str:
-    return _editor_prompt(article)
+def _editor_user_prompt(article: ArticleRaw, *, validation_error: str = "") -> str:
+    return _editor_prompt(article, validation_error=validation_error)
 
 
-def _editor_prompt(article: ArticleRaw) -> str:
+def _editor_prompt(article: ArticleRaw, *, validation_error: str = "") -> str:
+    repair_instruction = ""
+    if validation_error:
+        repair_instruction = (
+            "Previous output failed validation: "
+            f"{validation_error}\nReturn a corrected JSON object only.\n\n"
+        )
+
     return (
+        repair_instruction +
         "Task:\n"
         "1) Decide whether this article should be kept for a high-signal Daily Tech Briefing.\n"
-        "2) If keep, output category and concise bilingual summaries.\n\n"
+        "2) If keep, output category, compact bilingual summaries, story key, entities and symbols.\n\n"
         "Keep ONLY if related to:\n"
         "- AI / LLM\n"
         "- Robotics\n"
@@ -339,17 +430,25 @@ def _editor_prompt(article: ArticleRaw) -> str:
         "- gadget reviews\n"
         "- entertainment\n"
         "- opinion/editorial\n\n"
-        "Return strict JSON only, with keys:\n"
-        "keep (boolean),\n"
-        "category (one of: AI, Robotics, Chips, Big Tech, Startups, Other),\n"
-        "importance_score (0-100 integer),\n"
-        "title (concise title),\n"
-        "summary_en (array of exactly 2 concise English sentences),\n"
-        "summary_zh (array of exactly 2 concise Simplified Chinese sentences),\n"
-        "rejection_reason (string; empty if keep=true).\n\n"
+        "Do not include internal phrases such as focus tags, tier source, mapped symbols, "
+        "Official source or watched entity in any user-facing field.\n"
+        "Do not repeat the same phrase. Do not end any field with ellipses.\n\n"
+        "Return strict JSON only matching this JSON Schema:\n"
+        f"{json.dumps(ARTICLE_ASSESSMENT_SCHEMA, ensure_ascii=False)}\n\n"
         f"Article title: {article.title}\n"
         f"Article content:\n{article.content[:9000]}"
     )
+
+
+def _openai_json_schema_response_format() -> dict[str, Any]:
+    return {
+        "type": "json_schema",
+        "json_schema": {
+            "name": "article_assessment",
+            "strict": True,
+            "schema": ARTICLE_ASSESSMENT_SCHEMA,
+        },
+    }
 
 
 def _assessment_from_dict(data: dict[str, Any], default_title: str) -> ArticleAssessment:
@@ -361,7 +460,98 @@ def _assessment_from_dict(data: dict[str, Any], default_title: str) -> ArticleAs
         summary_en=[str(x).strip() for x in (data.get("summary_en") or []) if str(x).strip()],
         summary_zh=[str(x).strip() for x in (data.get("summary_zh") or []) if str(x).strip()],
         rejection_reason=str(data.get("rejection_reason") or ""),
+        story_key=_normalize_story_key(str(data.get("story_key") or default_title)),
+        entities=_normalize_tuple(data.get("entities")),
+        symbols=tuple(symbol.upper() for symbol in _normalize_tuple(data.get("symbols"))),
     )
+
+
+def _validated_assessment_from_dict(data: dict[str, Any], article: ArticleRaw) -> ArticleAssessment:
+    if not isinstance(data, dict) or not data:
+        raise AssessmentValidationError("empty or non-object JSON")
+
+    missing = [key for key in ARTICLE_ASSESSMENT_SCHEMA["required"] if key not in data]
+    if missing:
+        raise AssessmentValidationError(f"missing required fields: {', '.join(missing)}")
+
+    assessment = _assessment_from_dict(data, article.title)
+    if assessment.category not in SCHEMA_CATEGORIES:
+        raise AssessmentValidationError(f"unsupported category: {assessment.category}")
+    if not 0 <= assessment.importance_score <= 100:
+        raise AssessmentValidationError("importance_score must be 0-100")
+
+    if assessment.keep:
+        _validate_public_text("title", assessment.title, max_len=120)
+        _validate_story_key(assessment.story_key)
+        _validate_list("summary_en", assessment.summary_en, expected_len=2, max_len=220, require_cjk=False)
+        _validate_list("summary_zh", assessment.summary_zh, expected_len=2, max_len=160, require_cjk=True)
+    return assessment
+
+
+def _validate_story_key(value: str) -> None:
+    if not value or len(value) > 90:
+        raise AssessmentValidationError("story_key must be 1-90 chars")
+    if not re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", value):
+        raise AssessmentValidationError("story_key must be lowercase slug text")
+
+
+def _validate_list(
+    field: str,
+    values: list[str],
+    *,
+    expected_len: int,
+    max_len: int,
+    require_cjk: bool,
+) -> None:
+    if len(values) != expected_len:
+        raise AssessmentValidationError(f"{field} must contain exactly {expected_len} items")
+    for value in values:
+        _validate_public_text(field, value, max_len=max_len)
+        if require_cjk and not _contains_cjk(value):
+            raise AssessmentValidationError(f"{field} must be Simplified Chinese")
+
+
+def _validate_public_text(field: str, value: str, *, max_len: int) -> None:
+    text = (value or "").strip()
+    if not text:
+        raise AssessmentValidationError(f"{field} cannot be empty")
+    if len(text) > max_len:
+        raise AssessmentValidationError(f"{field} too long")
+    if text.endswith(("...", "…")):
+        raise AssessmentValidationError(f"{field} appears truncated")
+    lower = text.lower()
+    if any(pattern in lower for pattern in INTERNAL_METADATA_PATTERNS):
+        raise AssessmentValidationError(f"{field} leaks internal metadata")
+    if _has_repetitive_loop(text):
+        raise AssessmentValidationError(f"{field} appears repetitive")
+
+
+def _has_repetitive_loop(text: str) -> bool:
+    words = re.findall(r"[A-Za-z0-9\u4e00-\u9fff]+", text.lower())
+    if len(words) < 4:
+        return False
+    for width in (1, 2, 3):
+        counts: dict[tuple[str, ...], int] = {}
+        for idx in range(0, len(words) - width + 1):
+            key = tuple(words[idx : idx + width])
+            counts[key] = counts.get(key, 0) + 1
+            if counts[key] >= 3:
+                return True
+    return False
+
+
+def _normalize_tuple(value: Any) -> tuple[str, ...]:
+    if not isinstance(value, list):
+        return ()
+    seen: set[str] = set()
+    result: list[str] = []
+    for item in value:
+        normalized = re.sub(r"\s+", " ", str(item).strip().lower())
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        result.append(normalized)
+    return tuple(result)
 
 
 def _to_int(value: Any, default: int) -> int:
@@ -483,3 +673,94 @@ def _contains_cjk(text: str) -> bool:
 
 def _fallback_zh(english_sentence: str) -> str:
     return f"（中文翻译暂不可用）{english_sentence}"
+
+
+def _build_story_key(title: str) -> str:
+    text = title.lower()
+    normalized_models = re.sub(
+        r"\b(gpt|claude|gemini|deepseek|llama|mistral)[-\s]?(\d+(?:\.\d+)?)\b",
+        lambda match: f"{match.group(1)}-{match.group(2).replace('.', '-')}",
+        text,
+    )
+    tokens = re.findall(r"[a-z0-9]+", normalized_models)
+    stop_words = {
+        "the",
+        "a",
+        "an",
+        "to",
+        "for",
+        "and",
+        "or",
+        "of",
+        "in",
+        "on",
+        "with",
+        "from",
+        "is",
+        "are",
+        "its",
+        "new",
+        "launch",
+        "launches",
+        "launched",
+        "model",
+        "models",
+    }
+    selected = [token for token in tokens if token not in stop_words][:8]
+    return _normalize_story_key("-".join(selected) or "story")
+
+
+def _normalize_story_key(value: str) -> str:
+    text = value.lower()
+    text = re.sub(
+        r"\b(gpt|claude|gemini|deepseek|llama|mistral)[-\s]?(\d+(?:\.\d+)?)\b",
+        lambda match: f"{match.group(1)}-{match.group(2).replace('.', '-')}",
+        text,
+    )
+    text = re.sub(r"[^a-z0-9]+", "-", text).strip("-")
+    text = re.sub(r"-+", "-", text)
+    return text[:90].strip("-") or "story"
+
+
+def _extract_entities(text: str) -> tuple[str, ...]:
+    known = (
+        "openai",
+        "anthropic",
+        "google",
+        "alphabet",
+        "amazon",
+        "microsoft",
+        "meta",
+        "nvidia",
+        "apple",
+        "deepmind",
+        "tesla",
+    )
+    lower = text.lower()
+    return tuple(entity for entity in known if re.search(rf"\b{re.escape(entity)}\b", lower))
+
+
+def _extract_symbols(text: str) -> tuple[str, ...]:
+    mapping = {
+        "openai": ("MSFT", "NVDA"),
+        "anthropic": ("GOOGL", "AMZN"),
+        "google": ("GOOGL",),
+        "alphabet": ("GOOGL",),
+        "amazon": ("AMZN",),
+        "microsoft": ("MSFT",),
+        "meta": ("META",),
+        "nvidia": ("NVDA",),
+        "apple": ("AAPL",),
+        "tesla": ("TSLA",),
+        "bitcoin": ("BTC",),
+        "ethereum": ("ETH",),
+    }
+    lower = text.lower()
+    symbols: list[str] = []
+    for keyword, values in mapping.items():
+        if not re.search(rf"\b{re.escape(keyword)}\b", lower):
+            continue
+        for symbol in values:
+            if symbol not in symbols:
+                symbols.append(symbol)
+    return tuple(symbols)

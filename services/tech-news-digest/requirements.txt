@@ -3,6 +3,7 @@ requests==2.32.3
 trafilatura==1.12.2
 beautifulsoup4==4.12.3
 openai==1.68.2
+rapidfuzz==3.10.1
 lxml_html_clean==0.4.3
 libsql==0.1.10
 matplotlib==3.9.4
