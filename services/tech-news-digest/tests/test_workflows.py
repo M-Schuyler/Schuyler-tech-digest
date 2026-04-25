@@ -49,6 +49,12 @@ def test_workflows_use_node24_capable_action_versions() -> None:
     assert "uses: actions/upload-artifact@v7" in daily
 
 
+def test_daily_asset_upload_does_not_fail_delivery_run() -> None:
+    daily = read_workflow("daily-ai-market-brief.yml")
+
+    assert "name: Upload daily assets\n        if: always()\n        continue-on-error: true" in daily
+
+
 def test_gitignore_keeps_local_personal_site_playground_out_of_repo() -> None:
     gitignore = (REPO_ROOT / ".gitignore").read_text(encoding="utf-8")
 
