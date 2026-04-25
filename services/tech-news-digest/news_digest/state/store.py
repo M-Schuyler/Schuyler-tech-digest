@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+import logging
 import sqlite3
+import time
 from collections.abc import Sequence
 from dataclasses import asdict
 from datetime import date, datetime, timezone
@@ -12,6 +14,22 @@ from zoneinfo import ZoneInfo
 from ..config import RuntimeSettings
 from ..models import AlertEvent, BriefRecord, CloseSummary, MarketBar, WatchSignal
 from ..monitoring.models import MonitorEvent, MonitorSignal, SignalLevel
+
+logger = logging.getLogger(__name__)
+
+_TRANSIENT_STORE_ERROR_PATTERNS = (
+    "tls handshake eof",
+    "http error",
+    "connection reset",
+    "connection refused",
+    "connection aborted",
+    "connection closed",
+    "network is unreachable",
+    "temporarily unavailable",
+    "timed out",
+    "timeout",
+)
+_STORE_RETRY_DELAYS_SECONDS = (2.0, 5.0, 10.0)
 
 
 class StateStore:
@@ -515,27 +533,55 @@ class StateStore:
         return conn
 
     def _execute(self, statement: str, params: Sequence[Any] = ()) -> None:
-        with self._connect() as conn:
-            conn.execute(statement, tuple(params))
-            conn.commit()
+        def operation() -> None:
+            with self._connect() as conn:
+                conn.execute(statement, tuple(params))
+                conn.commit()
+
+        self._with_transient_retry(operation)
 
     def _executemany(self, statement: str, rows: Sequence[Sequence[Any]]) -> None:
         if not rows:
             return
 
-        with self._connect() as conn:
-            conn.executemany(statement, [tuple(row) for row in rows])
-            conn.commit()
+        def operation() -> None:
+            with self._connect() as conn:
+                conn.executemany(statement, [tuple(row) for row in rows])
+                conn.commit()
+
+        self._with_transient_retry(operation)
 
     def _query_all(self, statement: str, params: Sequence[Any] = ()) -> list[dict[str, Any]]:
-        with self._connect() as conn:
-            cursor = conn.execute(statement, tuple(params))
-            rows = cursor.fetchall()
-            return [_row_to_dict(cursor, row) for row in rows]
+        def operation() -> list[dict[str, Any]]:
+            with self._connect() as conn:
+                cursor = conn.execute(statement, tuple(params))
+                rows = cursor.fetchall()
+                return [_row_to_dict(cursor, row) for row in rows]
+
+        return self._with_transient_retry(operation)
 
     def _query_one(self, statement: str, params: Sequence[Any] = ()) -> dict[str, Any] | None:
         rows = self._query_all(statement, params)
         return rows[0] if rows else None
+
+    def _with_transient_retry(self, operation):
+        max_attempts = len(_STORE_RETRY_DELAYS_SECONDS) + 1
+        for attempt in range(1, max_attempts + 1):
+            try:
+                return operation()
+            except Exception as exc:  # noqa: BLE001
+                if attempt == max_attempts or not _is_transient_store_error(exc):
+                    raise
+                delay = _STORE_RETRY_DELAYS_SECONDS[attempt - 1]
+                logger.warning(
+                    "State store transient error; retrying in %.1fs (attempt %s/%s): %s",
+                    delay,
+                    attempt + 1,
+                    max_attempts,
+                    exc,
+                )
+                time.sleep(delay)
+        raise RuntimeError("unreachable state store retry path")
 
     def _ensure_schema(self) -> None:
         schema = [
@@ -729,6 +775,11 @@ def create_state_store(settings: RuntimeSettings) -> StateStore:
         sqlite_path=settings.state_db_local_path,
         market_timezone=settings.market_timezone,
     )
+
+
+def _is_transient_store_error(exc: Exception) -> bool:
+    message = str(exc).lower()
+    return any(pattern in message for pattern in _TRANSIENT_STORE_ERROR_PATTERNS)
 
 
 def _row_to_dict(cursor, row) -> dict[str, Any]:

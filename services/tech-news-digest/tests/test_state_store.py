@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
+import news_digest.state.store as store_module
 from news_digest.models import AlertEvent, BriefRecord, MarketBar, WatchSignal
 from news_digest.state.store import StateStore
 
@@ -57,3 +58,35 @@ def test_state_store_persists_alerts_briefs_and_market_bars(tmp_path) -> None:
     assert latest is not None
     assert latest.reference_trade_date_ny == date(2026, 4, 22)
     assert latest.watchlist[0].symbol == "NVDA"
+
+
+def test_execute_retries_transient_remote_store_errors(monkeypatch) -> None:
+    monkeypatch.setattr(store_module.time, "sleep", lambda _seconds: None)
+    store = StateStore.__new__(StateStore)
+    attempts = []
+
+    class Connection:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, traceback):
+            return False
+
+        def execute(self, statement, params):
+            self.statement = statement
+            self.params = params
+
+        def commit(self):
+            return None
+
+    def flaky_connect():
+        attempts.append(1)
+        if len(attempts) < 3:
+            raise ValueError("Hrana: `http error: `error trying to connect: tls handshake eof``")
+        return Connection()
+
+    store._connect = flaky_connect
+
+    store._execute("CREATE TABLE IF NOT EXISTS example (id INTEGER)")
+
+    assert len(attempts) == 3
